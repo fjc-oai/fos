@@ -22,10 +22,13 @@ pip install -r requirements.txt
 
 # Features
 
+## 26/01/07
+- [x] word quiz
+
 ## 11/10
-- [ ] review words
-  - [ ] counters
-  - [ ] bi-directional
+- [x] review words
+  - [x] counters
+  - [x] bi-directional
 
 ## 11/02
 - [x] back mechnican 

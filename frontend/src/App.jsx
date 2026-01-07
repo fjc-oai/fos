@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import Review from "./Review";
+import Quiz from "./Quiz";
 import BackMechTimer from "./backmech/TimerPage";
 
 const API = import.meta.env.VITE_API_URL || "/api";
@@ -409,10 +410,11 @@ function App() {
     return (
       <div style={{ minHeight: "100vh", display: "flex", flexDirection: "row", alignItems: "flex-start", justifyContent: "center", gap: 16, fontFamily: "sans-serif", padding: "1rem" }}>
         <div style={{ width: "100%", maxWidth: 480 }}>
-          <div style={{ display: "flex", gap: 12, marginBottom: "1rem" }}>
-            <button onClick={startSession} style={{ fontSize: 24, padding: "1rem 2rem" }}>Start Session</button>
-            <button onClick={() => setPage("wordBank")} style={{ fontSize: 24, padding: "1rem 2rem" }}>Word Bank</button>
-            <button onClick={() => setPage("review")} style={{ fontSize: 24, padding: "1rem 2rem" }}>Review Words</button>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12, marginBottom: "1rem" }}>
+            <button onClick={startSession} style={{ fontSize: 24, padding: "1rem 2rem", width: "100%" }}>Start Session</button>
+            <button onClick={() => setPage("wordBank")} style={{ fontSize: 24, padding: "1rem 2rem", width: "100%" }}>Word Bank</button>
+            <button onClick={() => setPage("review")} style={{ fontSize: 24, padding: "1rem 2rem", width: "100%" }}>Review Words</button>
+            <button onClick={() => setPage("quiz")} style={{ fontSize: 24, padding: "1rem 2rem", width: "100%" }}>Quiz</button>
           </div>
           <div style={{ marginBottom: "1rem" }}>
             <button onClick={() => setPage("backMech")} style={{ fontSize: 24, padding: "1rem 2rem", width: "100%" }}>Back Mechanic Timer</button>
@@ -502,6 +504,10 @@ function App() {
 
   if (page === "review") {
     return <Review onBack={() => setPage("home")} />;
+  }
+
+  if (page === "quiz") {
+    return <Quiz onBack={() => setPage("home")} />;
   }
 
   if (page === "backMech") {

@@ -2,6 +2,7 @@
 import os
 import pathlib
 from datetime import date, datetime
+import random
 from typing import List, Literal, Optional
 
 import sqlalchemy as sa
@@ -378,6 +379,67 @@ def update_back_schedule(sid: int, upd: BackScheduleUpdate):
 @app.get("/api/healthz")
 def healthz():
     return {"ok": True, "time": datetime.utcnow().isoformat()}
+
+
+# --- Common words service ---
+def _sanitize_word_list(words: List[str]) -> List[str]:
+    cleaned = []
+    for w in words or []:
+        if not isinstance(w, str):
+            continue
+        s = w.strip().lower()
+        if s and all(ch.isalpha() or ch in ("'", "-") for ch in s):
+            cleaned.append(s)
+    # de-duplicate while preserving order
+    seen = set()
+    result = []
+    for w in cleaned:
+        if w not in seen:
+            seen.add(w)
+            result.append(w)
+    return result
+
+
+def _load_common_words_from_file(path: pathlib.Path) -> List[str]:
+    try:
+        if not path.exists():
+            return []
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        # accept JSON array or newline-delimited
+        stripped = text.strip()
+        words: List[str]
+        if stripped.startswith("["):
+            import json
+            arr = json.loads(stripped)
+            words = [str(x) for x in arr if isinstance(x, (str, int, float))]
+        else:
+            words = [ln for ln in stripped.splitlines()]
+        return _sanitize_word_list(words)
+    except Exception:
+        return []
+
+
+COMMON_WORDS_FILE = os.getenv("COMMON_WORDS_FILE") or str((pathlib.Path(__file__).parent / "data" / "common_words.txt"))
+_COMMON_WORDS_LIST = _load_common_words_from_file(pathlib.Path(COMMON_WORDS_FILE))
+
+
+@app.get("/api/common_words", response_model=List[str])
+def get_common_words(count: int = 10):
+    """
+    Return `count` random common English words (no replacement) from the local dataset.
+    """
+    global _COMMON_WORDS_LIST
+    data = _COMMON_WORDS_LIST or []
+    if not data:
+        return []
+    c = max(1, min(int(count or 10), 100))
+    if c >= len(data):
+        # return a shuffled copy of all if requested more than available
+        arr = data[:]
+        random.shuffle(arr)
+        return arr
+    # sample without replacement
+    return random.sample(data, c)
 
 
 dist_dir = pathlib.Path(__file__).parent / "frontend" / "dist"
