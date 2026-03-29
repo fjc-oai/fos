@@ -163,11 +163,156 @@
   margin-bottom: 1rem;
 }
 
+.learning-panel-header > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.learning-panel-header .learning-eyebrow {
+  margin-bottom: 0;
+}
+
 .learning-inline-form {
   display: grid;
   grid-template-columns: 10rem 12rem auto;
   gap: 0.75rem;
   margin-bottom: 1rem;
+}
+
+.learning-quick-session-panel {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.learning-quick-session-form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.learning-duration-picks {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.learning-duration-pick {
+  padding: 0.95rem 0.7rem;
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--ink-strong);
+}
+
+.learning-duration-pick--active {
+  border-color: rgba(196, 90, 58, 0.22) !important;
+  background: rgba(255, 244, 238, 0.95) !important;
+  color: var(--accent-strong) !important;
+}
+
+.learning-quick-session-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.learning-quick-session-field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.learning-quick-session-field input {
+  height: 3rem;
+  box-sizing: border-box;
+  line-height: 1.2;
+}
+
+.learning-quick-session-field input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-block: 0;
+}
+
+.learning-quick-session-field span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+}
+
+.learning-log-session-button {
+  min-height: 3rem;
+  padding-inline: 1.2rem !important;
+  background: linear-gradient(135deg, var(--accent), var(--accent-soft)) !important;
+  color: #fffdf9 !important;
+  border-color: transparent !important;
+}
+
+.learning-session-stats {
+  display: grid;
+  gap: 0.9rem;
+  padding-top: 0.95rem;
+  margin-top: 0.2rem;
+  border-top: 1px solid rgba(71, 61, 53, 0.08);
+}
+
+.learning-session-stats__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem 1rem;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+}
+
+.learning-session-stats__summary strong {
+  color: var(--ink-strong);
+  font-weight: 700;
+}
+
+.learning-week-bars {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.learning-week-bar {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: center;
+}
+
+.learning-week-bar__track {
+  position: relative;
+  width: 100%;
+  max-width: 1.5rem;
+  height: 4.8rem;
+  border-radius: 999px;
+  background: rgba(71, 61, 53, 0.06);
+  overflow: hidden;
+}
+
+.learning-week-bar__fill {
+  position: absolute;
+  inset: auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(211, 109, 78, 0.95), rgba(241, 172, 115, 0.95));
+}
+
+.learning-week-bar__value {
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink-strong);
+}
+
+.learning-week-bar__day {
+  font-size: 0.76rem;
+  line-height: 1;
+  color: var(--ink-soft);
 }
 
 .learning-form {
@@ -198,6 +343,11 @@
   .learning-sidebar {
     position: static;
     height: auto;
+    order: 2;
+  }
+
+  .learning-workspace {
+    order: 1;
   }
 
   .learning-grid {
@@ -207,10 +357,93 @@
   .learning-inline-form {
     grid-template-columns: 1fr;
   }
+
+  .learning-quick-session-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 700px) {
   .learning-shell {
     padding: calc(5.2rem + env(safe-area-inset-top)) 0.9rem 1.4rem;
+  }
+
+  .learning-hero {
+    display: none;
+  }
+
+  .learning-hero h2 {
+    max-width: none;
+    font-size: 1.8rem;
+  }
+
+  .learning-panel-header {
+    align-items: center;
+  }
+
+  .learning-duration-picks {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+  }
+
+  .learning-duration-pick {
+    min-height: 2.15rem;
+    padding: 0.45rem 0.7rem !important;
+    font-size: 0.95rem;
+    font-family: inherit;
+    letter-spacing: 0;
+  }
+
+  .learning-quick-session-fields {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto;
+    gap: 0.55rem;
+    align-items: end;
+  }
+
+  .learning-quick-session-field input,
+  .learning-log-session-button {
+    height: 2.85rem;
+    min-height: 2.85rem;
+    box-sizing: border-box;
+  }
+
+  .learning-log-session-button {
+    min-width: 4.8rem;
+    padding-inline: 0.95rem !important;
+  }
+
+  .learning-session-stats {
+    gap: 0.8rem;
+    padding-top: 0.85rem;
+  }
+
+  .learning-session-stats__summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    font-size: 0.78rem;
+  }
+
+  .learning-session-stats__summary span {
+    display: grid;
+    gap: 0.15rem;
+  }
+
+  .learning-week-bars {
+    gap: 0.4rem;
+  }
+
+  .learning-week-bar__track {
+    max-width: 1.15rem;
+    height: 3.8rem;
+  }
+
+  .learning-week-bar__value {
+    font-size: 0.72rem;
+  }
+
+  .learning-week-bar__day {
+    font-size: 0.7rem;
   }
 }

@@ -45,6 +45,8 @@ const LEARNING_PAGES = [
   { id: "backMech", label: "Back Mechanic" },
 ];
 
+const QUICK_SESSION_MINUTES = [15, 30, 45, 60];
+
 function LearningApp() {
   const [page, setPage] = useState("home");
   const [sessions, setSessions] = useState([]);
@@ -202,22 +204,6 @@ function LearningApp() {
         </nav>
 
         <section className="learning-sidebar-card">
-          <h3>Stats</h3>
-          <div className="learning-stat-row">
-            <span>Past week</span>
-            <strong>{averageMinutesLastNDays(7)} m/d</strong>
-          </div>
-          <div className="learning-stat-row">
-            <span>Past month</span>
-            <strong>{averageMinutesLastNDays(30)} m/d</strong>
-          </div>
-          <div className="learning-stat-row">
-            <span>Total</span>
-            <strong>{toHoursOneDecimal(totalMinutesAll())} hr</strong>
-          </div>
-        </section>
-
-        <section className="learning-sidebar-card">
           <h3>Topics</h3>
           <AddTopicForm
             topicName={topicName}
@@ -342,6 +328,12 @@ function LearningApp() {
     return localYmd(d);
   }
 
+  function addDays(date, days) {
+    const next = new Date(date);
+    next.setDate(next.getDate() + days);
+    return next;
+  }
+
   // Aggregate total minutes per day for the last N days (including today), newest first
   function aggregateSessionsLastNDays(numDays) {
     const totalsByDate = new Map();
@@ -356,6 +348,30 @@ function LearningApp() {
       result.push({ date: day, minutes: totalsByDate.get(day) || 0 });
     }
     return result; // [today, yesterday, ...]
+  }
+
+  function aggregateSessionsCurrentWeek() {
+    const totalsByDate = new Map();
+    for (const s of sessions) {
+      const key = s.date;
+      const dur = Number(s.duration) || 0;
+      totalsByDate.set(key, (totalsByDate.get(key) || 0) + dur);
+    }
+
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = addDays(today, mondayOffset);
+
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = addDays(monday, index);
+      const key = localYmd(date);
+      return {
+        date: key,
+        day: date.toLocaleDateString(undefined, { weekday: "short" }),
+        minutes: totalsByDate.get(key) || 0,
+      };
+    });
   }
 
   // --- Stats helpers ---
@@ -402,6 +418,9 @@ function LearningApp() {
   function sumMinutes(values) {
     return (values || []).reduce((acc, v) => acc + (Number(v) || 0), 0);
   }
+
+  const currentWeekSessions = aggregateSessionsCurrentWeek();
+  const maxWeekMinutes = Math.max(60, ...currentWeekSessions.map((day) => day.minutes));
 
   function currentRangeFromMode(mode) {
     if (mode === "all") return { start: null, end: null };
@@ -473,13 +492,87 @@ function LearningApp() {
           <section className="learning-hero">
             <div>
               <span className="learning-eyebrow">learning</span>
-              <h2>Practice inside the same calm shell.</h2>
-              <p>Sessions, word review, quiz, and physical therapy timers stay under one roof.</p>
+              <h2>Log magazine reading fast.</h2>
+              <p>Quickly record an English reading session, then add words when you need them.</p>
+            </div>
+          </section>
+
+          <section className="learning-panel learning-quick-session-panel">
+            <div className="learning-panel-header">
+              <div>
+                <h3>Quick add session</h3>
+              </div>
+              <button type="button" onClick={startSession}>Live timer</button>
+            </div>
+
+            <form onSubmit={quickLogSession} className="learning-quick-session-form">
+              <div className="learning-duration-picks" aria-label="Quick duration">
+                {QUICK_SESSION_MINUTES.map((minutes) => (
+                  <button
+                    key={minutes}
+                    type="button"
+                    className={`learning-duration-pick ${Number(quickDurMin) === minutes ? "learning-duration-pick--active" : ""}`}
+                    onClick={() => setQuickDurMin(minutes)}
+                  >
+                    {minutes}m
+                  </button>
+                ))}
+              </div>
+
+              <div className="learning-quick-session-fields">
+                <label className="learning-quick-session-field">
+                  <span>Minutes</span>
+                  <input
+                    type="number"
+                    value={quickDurMin}
+                    onChange={(e) => setQuickDurMin(e.target.value)}
+                    min={1}
+                    max={1440}
+                    required
+                    placeholder="Minutes"
+                  />
+                </label>
+
+                <label className="learning-quick-session-field">
+                  <span>Date</span>
+                  <input
+                    type="date"
+                    value={quickDate}
+                    onChange={(e) => setQuickDate(e.target.value)}
+                  />
+                </label>
+
+                <button type="submit" className="learning-log-session-button">
+                  Log
+                </button>
+              </div>
+            </form>
+
+            <div className="learning-session-stats">
+              <div className="learning-session-stats__summary">
+                <span>Past week avg <strong>{averageMinutesLastNDays(7)}m</strong></span>
+                <span>Past month avg <strong>{averageMinutesLastNDays(30)}m</strong></span>
+                <span>Total <strong>{toHoursOneDecimal(totalMinutesAll())}h</strong></span>
+              </div>
+
+              <div className="learning-week-bars" aria-label="Current week hours">
+                {currentWeekSessions.map((day) => (
+                  <div key={day.date} className="learning-week-bar">
+                    <div className="learning-week-bar__track">
+                      <div
+                        className="learning-week-bar__fill"
+                        style={{ height: `${Math.max(8, (day.minutes / maxWeekMinutes) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="learning-week-bar__value">{toHoursOneDecimal(day.minutes)}h</span>
+                    <span className="learning-week-bar__day">{day.day}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </section>
 
           <section className="learning-grid">
-            <button type="button" className="learning-action-card" onClick={startSession}>Start Session</button>
             <button type="button" className="learning-action-card" onClick={() => setPage("wordBank")}>Word Bank</button>
             <button type="button" className="learning-action-card" onClick={() => setPage("review")}>Review</button>
             <button type="button" className="learning-action-card" onClick={() => setPage("quiz")}>Quiz</button>
@@ -487,25 +580,7 @@ function LearningApp() {
           </section>
 
           <section className="learning-panel">
-            <h3>Quick add</h3>
-            <form onSubmit={quickLogSession} className="learning-inline-form">
-              <input
-                type="number"
-                value={quickDurMin}
-                onChange={(e) => setQuickDurMin(e.target.value)}
-                min={1}
-                max={1440}
-                required
-                placeholder="Minutes"
-              />
-              <input
-                type="date"
-                value={quickDate}
-                onChange={(e) => setQuickDate(e.target.value)}
-              />
-              <button type="submit">Log session</button>
-            </form>
-
+            <h3>Add word</h3>
             <form onSubmit={submitWord} className="learning-form">
               <input
                 type="text"
