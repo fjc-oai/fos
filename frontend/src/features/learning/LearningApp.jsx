@@ -2,47 +2,14 @@ import { useState, useEffect } from "react";
 import "./LearningApp.css";
 import Review from "./Review";
 import Quiz from "./Quiz";
-import BackMechTimer from "./backmech/TimerPage";
 
 const API = import.meta.env.VITE_API_URL || "/api";
-
-
-function AddTopicForm({ topicName, setTopicName, submitting, onSubmit }) {
-  return (
-    <form onSubmit={onSubmit} style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-      <input
-        type="text"
-        value={topicName}
-        onChange={(e) => setTopicName(e.target.value)}
-        placeholder="New topic"
-        required
-        style={{ flex: 1, padding: 8, fontSize: 16 }}
-      />
-      <button type="submit" disabled={submitting}>{submitting ? "Adding..." : "Add"}</button>
-    </form>
-  );
-}
-
-function TopicList({ topics, loading }) {
-  if (loading) return <p>Loading...</p>;
-  if (!topics || topics.length === 0) return <p>No topics.</p>;
-  return (
-    <ul style={{ paddingLeft: 18 }}>
-      {topics.map((t) => (
-        <li key={t.id} style={{ marginBottom: 6 }}>
-          <strong>{t.name}</strong>
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 const LEARNING_PAGES = [
   { id: "home", label: "Dashboard" },
   { id: "wordBank", label: "Word Bank" },
   { id: "review", label: "Review" },
   { id: "quiz", label: "Quiz" },
-  { id: "backMech", label: "Back Mechanic" },
 ];
 
 const QUICK_SESSION_MINUTES = [15, 30, 45, 60];
@@ -72,12 +39,6 @@ function LearningApp() {
   const [wbCustomEnd, setWbCustomEnd] = useState(""); // YYYY-MM-DD
   const [hoveredWordId, setHoveredWordId] = useState(null);
 
-  // topics
-  const [topics, setTopics] = useState([]);
-  const [topicName, setTopicName] = useState("");
-  const [submittingTopic, setSubmittingTopic] = useState(false);
-  const [topicsLoading, setTopicsLoading] = useState(false);
-
   async function refreshSessions() {
     try {
       const [resA, resB] = await Promise.all([
@@ -94,10 +55,6 @@ function LearningApp() {
 
   useEffect(() => {
     refreshSessions();
-  }, []);
-
-  useEffect(() => {
-    refreshTopics();
   }, []);
 
   // ticking clock while session is running
@@ -117,49 +74,6 @@ function LearningApp() {
       return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
     }
     return `${minutes}:${String(seconds).padStart(2, "0")}`;
-  }
-
-  async function refreshTopics() {
-    setTopicsLoading(true);
-    try {
-      const res = await fetch(`${API}/topics`);
-      if (res.ok) {
-        const data = await res.json();
-        setTopics(data);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setTopicsLoading(false);
-    }
-  }
-
-  async function submitTopic(e) {
-    e.preventDefault();
-    const name = (topicName || "").trim();
-    if (!name) {
-      alert("Please enter a topic.");
-      return;
-    }
-    setSubmittingTopic(true);
-    try {
-      const res = await fetch(`${API}/topics`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      if (res.ok) {
-        setTopicName("");
-        await refreshTopics();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert("Failed to add topic: " + JSON.stringify(err));
-      }
-    } catch (e) {
-      alert("Failed to add topic: " + e.message);
-    } finally {
-      setSubmittingTopic(false);
-    }
   }
 
   const elapsedMs = sessionStartMs ? ((sessionEndMs ?? nowMs) - sessionStartMs) : 0;
@@ -187,7 +101,7 @@ function LearningApp() {
       <aside className="learning-sidebar">
         <div className="learning-brand-block">
           <h1>3000r</h1>
-          <p>Sessions, review, quiz, topics, and back work in the same shell.</p>
+          <p>Sessions, review, and quiz in the same shell.</p>
         </div>
 
         <nav className="learning-nav">
@@ -203,16 +117,6 @@ function LearningApp() {
           ))}
         </nav>
 
-        <section className="learning-sidebar-card">
-          <h3>Topics</h3>
-          <AddTopicForm
-            topicName={topicName}
-            setTopicName={setTopicName}
-            submitting={submittingTopic}
-            onSubmit={submitTopic}
-          />
-          <TopicList topics={topics} loading={topicsLoading} />
-        </section>
       </aside>
     );
   }
@@ -576,7 +480,6 @@ function LearningApp() {
             <button type="button" className="learning-action-card" onClick={() => setPage("wordBank")}>Word Bank</button>
             <button type="button" className="learning-action-card" onClick={() => setPage("review")}>Review</button>
             <button type="button" className="learning-action-card" onClick={() => setPage("quiz")}>Quiz</button>
-            <button type="button" className="learning-action-card learning-action-card--wide" onClick={() => setPage("backMech")}>Back Mechanic Timer</button>
           </section>
 
           <section className="learning-panel">
@@ -611,10 +514,6 @@ function LearningApp() {
 
   if (page === "quiz") {
     return <Quiz onBack={() => setPage("home")} />;
-  }
-
-  if (page === "backMech") {
-    return <BackMechTimer onBack={() => setPage("home")} />;
   }
 
   if (page === "wordBank") {

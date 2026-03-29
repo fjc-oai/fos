@@ -801,6 +801,7 @@ function TodoApp({ isMobile = false }) {
             <div className="todo-native-sheet" onClick={(event) => event.stopPropagation()}>
               <TaskInspector
                 key={`${selectedTask.id}:${selectedTask.updatedAt}`}
+                onClose={() => setSelectedTaskId(null)}
                 onSetStatus={handleSetTaskStatus}
                 onSetTaskType={handleSetTaskType}
                 onToggleToday={handleToggleToday}
@@ -1115,6 +1116,7 @@ function TodoApp({ isMobile = false }) {
         {selectedTask ? (
           <TaskInspector
             key={`${selectedTask.id}:${selectedTask.updatedAt}`}
+            onClose={() => setSelectedTaskId(null)}
             onSetStatus={handleSetTaskStatus}
             onSetTaskType={handleSetTaskType}
             onToggleToday={handleToggleToday}
@@ -1354,6 +1356,7 @@ function TaskInspector({
   task,
   projects,
   todayKey,
+  onClose,
   onUpdateTask,
   onToggleToday,
   onSetStatus,
@@ -1373,6 +1376,11 @@ function TaskInspector({
     });
   }
 
+  async function handleClose() {
+    await saveDraft();
+    onClose?.();
+  }
+
   const availableTaskTypes = getAvailableTaskTypes(task.area);
   const areaProjects = sortProjects(
     projects.filter(
@@ -1389,8 +1397,8 @@ function TaskInspector({
           <p className="eyebrow">Task detail</p>
           <h3>{task.title}</h3>
         </div>
-        <button className="ghost-button" onClick={saveDraft} type="button">
-          Save
+        <button className="ghost-button" onClick={handleClose} type="button">
+          Close
         </button>
       </div>
 
