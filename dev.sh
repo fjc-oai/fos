@@ -24,6 +24,20 @@ lan_url() {
   fi
 }
 
+load_backend_env() {
+  if [ -f "$BACKEND_DIR/.env" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        ""|\#*) continue ;;
+      esac
+
+      local key="${line%%=*}"
+      local value="${line#*=}"
+      export "$key=$value"
+    done < "$BACKEND_DIR/.env"
+  fi
+}
+
 build_frontend() {
   notice "Building frontend..."
   cd "$FRONTEND_DIR"
@@ -69,6 +83,7 @@ ensure_venv() {
 serve_backend() {
   cd "$BACKEND_DIR"
   ensure_venv
+  load_backend_env
   notice "Starting uvicorn at http://localhost:$PORT ..."
   if [ -n "$(lan_url)" ]; then
     notice "On your iPhone, open $(lan_url)"
@@ -117,6 +132,7 @@ launch_background() {
   if [ -n "$(lan_url)" ]; then
     notice "On your iPhone, open $(lan_url)"
   fi
+  load_backend_env
   cd "$BACKEND_DIR"
   LOG_FILE_ENV="$LOG_FILE" PID_FILE_ENV="$PID_FILE" BACKEND_DIR_ENV="$BACKEND_DIR" HOST_ENV="$HOST" PORT_ENV="$PORT" python3 - <<'PY'
 import os

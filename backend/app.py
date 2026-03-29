@@ -35,12 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DEFAULT_DATABASE_URL = (
-    "postgresql+psycopg://neondb_owner:npg_9cQhAmEBiZu3@"
-    "ep-nameless-tree-afsairo6-pooler.c-2.us-west-2.aws.neon.tech/"
-    "neondb?sslmode=require&channel_binding=require"
-)
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip() or DEFAULT_DATABASE_URL
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 if DATABASE_URL:
     engine = sa.create_engine(
         DATABASE_URL,
