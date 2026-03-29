@@ -1,4 +1,4 @@
 fastapi
 uvicorn
 SQLAlchemy>=2.0
-psycopg[binary]>=3.2 ; python_version >= "3.8"
+psycopg[binary]>=3.2

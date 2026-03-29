@@ -1,21 +1,18 @@
-# app.py
 import os
 import pathlib
-from datetime import date, datetime
-import random
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Literal, Optional
 
 import sqlalchemy as sa
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, JSONResponse
+from modules.study import setup_study_module
 
-app = FastAPI(title="3000r backend")
+app = FastAPI(title="fos backend")
 
-# --- CORS ---
-# Support multiple local dev origins by default; override with FRONTEND_ORIGINS or FRONTEND_ORIGIN
 DEFAULT_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -25,7 +22,7 @@ DEFAULT_ORIGINS = [
 FRONTEND_ORIGINS = os.getenv("FRONTEND_ORIGINS")
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN")
 if FRONTEND_ORIGINS:
-    ALLOW_ORIGINS = [o.strip() for o in FRONTEND_ORIGINS.split(",") if o.strip()]
+    ALLOW_ORIGINS = [origin.strip() for origin in FRONTEND_ORIGINS.split(",") if origin.strip()]
 elif FRONTEND_ORIGIN:
     ALLOW_ORIGINS = [FRONTEND_ORIGIN]
 else:
@@ -38,422 +35,848 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- DB engine: SQLite (default) or Postgres via DATABASE_URL ---
-
-#
-DB_MODE: Literal["local", "remote"] = "remote"
-if DB_MODE == "remote":
-    # Found this from https://console.neon.tech/app/projects/mute-mud-01593984?database=neondb&branchId=br-winter-king-af7p2cux
-    DATABASE_URL = "postgresql+psycopg://neondb_owner:npg_9cQhAmEBiZu3@ep-nameless-tree-afsairo6-pooler.c-2.us-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+DEFAULT_DATABASE_URL = (
+    "postgresql+psycopg://neondb_owner:npg_9cQhAmEBiZu3@"
+    "ep-nameless-tree-afsairo6-pooler.c-2.us-west-2.aws.neon.tech/"
+    "neondb?sslmode=require&channel_binding=require"
+)
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip() or DEFAULT_DATABASE_URL
+if DATABASE_URL:
     engine = sa.create_engine(
-        DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=5
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=5,
+        max_overflow=5,
     )
-    print(f"Connected to {DATABASE_URL}")
-    """
-    Test NeonDB locally
-
-    export DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5432/DB?sslmode=require'
-    # still allow your React dev origin locally
-    export FRONTEND_ORIGIN='http://localhost:5173'
-    uvicorn app:app --reload --port 8000
-    # test (creates table in Neon automatically)
-    curl -s http://localhost:8000/healthz
-    curl -sX POST http://localhost:8000/sessions -H 'content-type: application/json' -d '{"date":"2025-09-04","duration":45}'
-    curl -s http://localhost:8000/sessions
-    """
 else:
     engine = sa.create_engine(
-        "sqlite:///./app.db", connect_args={"check_same_thread": False}
+        "sqlite:///./app.db",
+        connect_args={"check_same_thread": False},
     )
 
-# --- Schema ---
+VALID_STATUSES = {"open", "done"}
+VALID_TYPES = {"main", "backlog", "blocked", "deadline"}
+
 metadata = sa.MetaData()
-sessions = sa.Table(
-    "sessions",
+projects = sa.Table(
+    "projects",
     metadata,
     sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("date", sa.Date, nullable=False),
-    sa.Column("duration", sa.Integer, nullable=False),
+    sa.Column("title", sa.String(255), nullable=False),
+    sa.Column("area", sa.String(20), nullable=False),
+    sa.Column("status", sa.String(20), nullable=False, server_default="open"),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
 )
-review_sessions = sa.Table(
-    "review_sessions",
+daily_notes = sa.Table(
+    "daily_notes",
+    metadata,
+    sa.Column("note_date", sa.Date, primary_key=True),
+    sa.Column("content", sa.Text, nullable=False, server_default=""),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+)
+tasks = sa.Table(
+    "tasks",
     metadata,
     sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("date", sa.Date, nullable=False),
-    sa.Column("duration", sa.Integer, nullable=False),
+    sa.Column("title", sa.String(255), nullable=False),
+    sa.Column("details", sa.Text, nullable=False, server_default=""),
+    sa.Column("area", sa.String(20), nullable=False),
+    sa.Column("status", sa.String(20), nullable=False),
+    sa.Column("task_type", sa.String(20), nullable=False),
+    sa.Column("due_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("follow_up_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("planned_for", sa.Date, nullable=True),
+    sa.Column("today_position", sa.Integer, nullable=True),
+    sa.Column(
+        "project_id",
+        sa.Integer,
+        sa.ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
 )
-words = sa.Table(
-    "words",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("word", sa.String(255), nullable=False),
-    sa.Column("date", sa.Date, nullable=False),
-)
-word_stats = sa.Table(
-    "word_stats",
-    metadata,
-    sa.Column("word_id", sa.Integer, sa.ForeignKey("words.id", ondelete="CASCADE"), primary_key=True),
-    sa.Column("yes_count", sa.Integer, nullable=False, server_default="0"),
-    sa.Column("no_count", sa.Integer, nullable=False, server_default="1"),
-)
-word_examples = sa.Table(
-    "word_examples",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("word_id", sa.Integer, sa.ForeignKey("words.id", ondelete="CASCADE"), nullable=False),
-    sa.Column("example", sa.Text, nullable=False),
-)
-# Topics
-topics = sa.Table(
-    "topics",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("name", sa.String(255), nullable=False),
-)
-back_schedules = sa.Table(
-    "back_schedules",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-    sa.Column("name", sa.String(255), nullable=False),
-    sa.Column("payload", sa.JSON, nullable=False),
-    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-)
-metadata.create_all(engine)  # CREATE TABLE IF NOT EXISTS
+
+setup_study_module(app, engine, metadata)
 
 
-class Session(BaseModel):
-    date: date
-    duration: int = Field(gt=0, le=1440)
+class ProjectCreate(BaseModel):
+    title: str = Field(min_length=1)
+    area: Literal["work", "life"]
+    status: Literal["open", "done"] = "open"
 
 
-@app.post("/api/sessions", response_model=Session)
-def add_session(s: Session):
-    print(f"Adding session: {s}")
-    with engine.begin() as conn:
-        conn.execute(sa.insert(sessions).values(date=s.date, duration=s.duration))
-    return s
+class ProjectUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1)
+    area: Optional[Literal["work", "life"]] = None
+    status: Optional[Literal["open", "done"]] = None
 
 
-@app.get("/api/sessions", response_model=List[Session])
-def list_sessions():
-    with engine.begin() as conn:
-        rows = conn.execute(
-            sa.select(sessions.c.date, sessions.c.duration).order_by(
-                sessions.c.date.desc()
-            )
-        ).all()
-    return [{"date": r.date, "duration": r.duration} for r in rows]
-
-
-class ReviewSession(BaseModel):
-    date: date
-    duration: int = Field(gt=0, le=1440)
-
-
-@app.post("/api/review_sessions", response_model=ReviewSession)
-def add_review_session(s: ReviewSession):
-    print(f"Adding review session: {s}")
-    with engine.begin() as conn:
-        conn.execute(sa.insert(review_sessions).values(date=s.date, duration=s.duration))
-    return s
-
-
-@app.get("/api/review_sessions", response_model=List[ReviewSession])
-def list_review_sessions():
-    with engine.begin() as conn:
-        rows = conn.execute(
-            sa.select(review_sessions.c.date, review_sessions.c.duration).order_by(
-                review_sessions.c.date.desc()
-            )
-        ).all()
-    return [{"date": r.date, "duration": r.duration} for r in rows]
-
-
-class WordCreate(BaseModel):
-    word: str = Field(min_length=1)
-    examples: List[str] = Field(min_items=1)
-    date: Optional[date] = None
-
-
-class Word(BaseModel):
+class ProjectOut(BaseModel):
     id: int
-    word: str
-    date: date
-    examples: List[str]
-    yes_count: int = 0
-    no_count: int = 1
+    title: str
+    area: Literal["work", "life"]
+    status: Literal["open", "done"]
+    created_at: datetime
+    updated_at: datetime
 
 
-@app.post("/api/words", response_model=Word)
-def add_word(w: WordCreate):
-    valid_examples = [e.strip() for e in w.examples if e and e.strip()]
-    chosen_date = w.date or date.today()
-    with engine.begin() as conn:
-        result = conn.execute(sa.insert(words).values(word=w.word, date=chosen_date))
-        inserted_pk = result.inserted_primary_key
-        if inserted_pk and len(inserted_pk) > 0:
-            new_id = inserted_pk[0]
-        else:
-            new_id = conn.execute(sa.select(sa.func.max(words.c.id))).scalar_one()
-        if valid_examples:
-            conn.execute(
-                sa.insert(word_examples),
-                [{"word_id": new_id, "example": ex} for ex in valid_examples],
-            )
-        # initialize stats: yes=0, no=1 for new words
-        conn.execute(
-            sa.insert(word_stats).values(word_id=new_id, yes_count=0, no_count=1)
+class TaskCreate(BaseModel):
+    title: str = Field(min_length=1)
+    details: str = ""
+    area: Literal["work", "life"]
+    status: Literal["open", "done"] = "open"
+    task_type: Literal["main", "backlog", "blocked", "deadline"] = "backlog"
+    due_at: Optional[datetime] = None
+    follow_up_at: Optional[datetime] = None
+    planned_for: Optional[date] = None
+    today_position: Optional[int] = None
+    project_id: Optional[int] = None
+    completed_at: Optional[datetime] = None
+
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1)
+    details: Optional[str] = None
+    area: Optional[Literal["work", "life"]] = None
+    status: Optional[Literal["open", "done"]] = None
+    task_type: Optional[Literal["main", "backlog", "blocked", "deadline"]] = None
+    due_at: Optional[datetime] = None
+    follow_up_at: Optional[datetime] = None
+    planned_for: Optional[date] = None
+    today_position: Optional[int] = None
+    project_id: Optional[int] = None
+    completed_at: Optional[datetime] = None
+
+
+class TaskOut(BaseModel):
+    id: int
+    title: str
+    details: str
+    area: Literal["work", "life"]
+    status: Literal["open", "done"]
+    task_type: Literal["main", "backlog", "blocked", "deadline"]
+    due_at: Optional[datetime] = None
+    follow_up_at: Optional[datetime] = None
+    planned_for: Optional[date] = None
+    today_position: Optional[int] = None
+    project_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: Optional[datetime] = None
+
+
+class DailyNoteUpdate(BaseModel):
+    content: str = ""
+
+
+class DailyNoteOut(BaseModel):
+    note_date: date
+    content: str
+    updated_at: datetime
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(microsecond=0)
+
+
+def map_old_status(value: Optional[str]) -> str:
+    if value == "done" or value == "archived":
+        return "done"
+    return "open"
+
+
+def map_old_type(row) -> str:
+    current = row.get("task_type")
+    if current in VALID_TYPES:
+        return current
+    if current == "focus":
+        return "main"
+
+    old_engagement = row.get("engagement")
+    if old_engagement == "waiting":
+        return "blocked"
+    if old_engagement == "parked":
+        return "backlog"
+    if row.get("due_at") is not None:
+        return "deadline"
+    if row.get("status") == "inbox":
+        return "backlog"
+    return "main"
+
+
+def row_to_project(row) -> dict:
+    return {
+        "id": row.id,
+        "title": row.title,
+        "area": row.area,
+        "status": row.status,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+def row_to_task(row) -> dict:
+    return {
+        "id": row.id,
+        "title": row.title,
+        "details": row.details or "",
+        "area": row.area,
+        "status": row.status,
+        "task_type": "main" if row.task_type == "focus" else row.task_type,
+        "due_at": row.due_at,
+        "follow_up_at": row.follow_up_at,
+        "planned_for": row.planned_for,
+        "today_position": row.today_position,
+        "project_id": row.project_id,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+        "completed_at": row.completed_at,
+    }
+
+
+def row_to_daily_note(row) -> dict:
+    return {
+        "note_date": row.note_date,
+        "content": row.content or "",
+        "updated_at": row.updated_at,
+    }
+
+
+def normalize_area_task_type(area: str, task_type: str) -> str:
+    if area == "life" and task_type == "main":
+        return "backlog"
+    return task_type
+
+
+def get_next_today_position(conn, area: str, task_type: str, exclude_task_id: Optional[int] = None) -> int:
+    query = sa.select(sa.func.max(tasks.c.today_position)).where(
+        tasks.c.area == area,
+        tasks.c.task_type == task_type,
+        tasks.c.status == "open",
+    )
+
+    if exclude_task_id is not None:
+        query = query.where(tasks.c.id != exclude_task_id)
+
+    current_max = conn.execute(query).scalar_one()
+    return (current_max or 0) + 1
+
+
+def get_task_or_404(conn, task_id: int):
+    row = conn.execute(sa.select(tasks).where(tasks.c.id == task_id)).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return row
+
+
+def get_project_or_404(conn, project_id: int):
+    row = conn.execute(sa.select(projects).where(projects.c.id == project_id)).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return row
+
+
+def ensure_schema():
+    inspector = sa.inspect(engine)
+    table_names = inspector.get_table_names()
+
+    if "tasks" not in table_names and "projects" not in table_names:
+        metadata.create_all(engine)
+        return
+
+    task_columns = (
+        {column["name"] for column in inspector.get_columns("tasks")}
+        if "tasks" in table_names
+        else set()
+    )
+    project_columns = (
+        {column["name"] for column in inspector.get_columns("projects")}
+        if "projects" in table_names
+        else set()
+    )
+    expected_task_columns = {
+        "id",
+        "title",
+        "details",
+        "area",
+        "status",
+        "task_type",
+        "due_at",
+        "follow_up_at",
+        "planned_for",
+        "today_position",
+        "project_id",
+        "created_at",
+        "updated_at",
+        "completed_at",
+    }
+    expected_project_columns = {
+        "id",
+        "title",
+        "area",
+        "status",
+        "created_at",
+        "updated_at",
+    }
+
+    needs_task_rebuild = not expected_task_columns.issubset(task_columns)
+    needs_project_rebuild = "projects" not in table_names or not expected_project_columns.issubset(project_columns)
+
+    if not needs_task_rebuild and not needs_project_rebuild:
+        return
+
+    old_task_rows = []
+    old_project_rows = []
+    if "tasks" in table_names:
+        with engine.begin() as conn:
+            old_task_rows = conn.execute(sa.text("SELECT * FROM tasks ORDER BY id")).mappings().all()
+    if "projects" in table_names:
+        with engine.begin() as conn:
+            old_project_rows = conn.execute(sa.text("SELECT * FROM projects ORDER BY id")).mappings().all()
+
+    create_projects_sql = """
+    CREATE TABLE projects_v2 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title VARCHAR(255) NOT NULL,
+      area VARCHAR(20) NOT NULL,
+      status VARCHAR(20) NOT NULL,
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL
+    )
+    """
+    create_tasks_sql = """
+    CREATE TABLE tasks_v2 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title VARCHAR(255) NOT NULL,
+      details TEXT NOT NULL DEFAULT '',
+      area VARCHAR(20) NOT NULL,
+      status VARCHAR(20) NOT NULL,
+      task_type VARCHAR(20) NOT NULL,
+      due_at DATETIME,
+      follow_up_at DATETIME,
+      planned_for DATE,
+      today_position INTEGER,
+      project_id INTEGER REFERENCES projects_v2(id) ON DELETE SET NULL,
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
+      completed_at DATETIME
+    )
+    """
+    insert_project_sql = sa.text(
+        """
+        INSERT INTO projects_v2 (id, title, area, status, created_at, updated_at)
+        VALUES (:id, :title, :area, :status, :created_at, :updated_at)
+        """
+    )
+    insert_task_sql = sa.text(
+        """
+        INSERT INTO tasks_v2 (
+          id, title, details, area, status, task_type, due_at, follow_up_at,
+          planned_for, today_position, project_id, created_at, updated_at, completed_at
+        ) VALUES (
+          :id, :title, :details, :area, :status, :task_type, :due_at, :follow_up_at,
+          :planned_for, :today_position, :project_id, :created_at, :updated_at, :completed_at
         )
-    return {"id": new_id, "word": w.word, "date": chosen_date, "examples": valid_examples, "yes_count": 0, "no_count": 1}
+        """
+    )
 
-
-@app.get("/api/words", response_model=List[Word])
-def list_words(start: Optional[date] = None, end: Optional[date] = None):
-    # Build base query with optional date range filtering
-    stmt = sa.select(words.c.id, words.c.word, words.c.date)
-    if start is not None:
-        stmt = stmt.where(words.c.date >= start)
-    if end is not None:
-        stmt = stmt.where(words.c.date <= end)
-    stmt = stmt.order_by(words.c.date.desc(), words.c.id.desc())
+    rows_by_id = {row["id"]: row for row in old_task_rows}
 
     with engine.begin() as conn:
-        word_rows = conn.execute(stmt).all()
-        example_rows = conn.execute(
-            sa.select(word_examples.c.word_id, word_examples.c.example)
-        ).all()
-        stats_rows = conn.execute(
-            sa.select(word_stats.c.word_id, word_stats.c.yes_count, word_stats.c.no_count)
-        ).all()
-    examples_by_word_id = {}
-    for word_id, example in example_rows:
-        examples_by_word_id.setdefault(word_id, []).append(example)
-    stats_by_word_id = {wid: (yes, no) for (wid, yes, no) in stats_rows}
-    return [
-        {
-            "id": r.id,
-            "word": r.word,
-            "date": r.date,
-            "examples": examples_by_word_id.get(r.id, []),
-            "yes_count": (stats_by_word_id.get(r.id, (0, 1))[0]),
-            "no_count": (stats_by_word_id.get(r.id, (0, 1))[1]),
-        }
-        for r in word_rows
-    ]
+        conn.execute(sa.text("DROP TABLE IF EXISTS tasks_v2"))
+        conn.execute(sa.text("DROP TABLE IF EXISTS projects_v2"))
+        conn.execute(sa.text(create_projects_sql))
+        conn.execute(sa.text(create_tasks_sql))
+
+        max_project_id = 0
+        parent_project_map = {}
+
+        for row in old_project_rows:
+            mapped = {
+                "id": row["id"],
+                "title": row["title"],
+                "area": row.get("area") or "work",
+                "status": row.get("status") if row.get("status") in VALID_STATUSES else "open",
+                "created_at": row.get("created_at") or utcnow(),
+                "updated_at": row.get("updated_at") or row.get("created_at") or utcnow(),
+            }
+            max_project_id = max(max_project_id, mapped["id"])
+            conn.execute(insert_project_sql, mapped)
+
+        for row in old_task_rows:
+            project_id = row.get("project_id")
+            parent_id = row.get("parent_id")
+
+            if parent_id is not None:
+                if parent_id not in parent_project_map:
+                    parent_row = rows_by_id.get(parent_id)
+                    created_at = (
+                        (parent_row or {}).get("created_at")
+                        or row.get("created_at")
+                        or utcnow()
+                    )
+                    updated_at = (
+                        (parent_row or {}).get("updated_at")
+                        or created_at
+                    )
+                    max_project_id += 1
+                    conn.execute(
+                        insert_project_sql,
+                        {
+                            "id": max_project_id,
+                            "title": (parent_row or {}).get("title") or f"Imported project {parent_id}",
+                            "area": (parent_row or {}).get("area") or row.get("area") or "work",
+                            "status": "open",
+                            "created_at": created_at,
+                            "updated_at": updated_at,
+                        },
+                    )
+                    parent_project_map[parent_id] = max_project_id
+
+                project_id = parent_project_map[parent_id]
+
+            area = row.get("area") or "work"
+            status = row["status"] if row.get("status") in VALID_STATUSES else map_old_status(row.get("status"))
+            task_type = normalize_area_task_type(area, map_old_type(row))
+            mapped_task = {
+                "id": row["id"],
+                "title": row["title"],
+                "details": row.get("details") or row.get("notes") or "",
+                "area": area,
+                "status": status,
+                "task_type": task_type,
+                "due_at": row.get("due_at") if task_type == "deadline" else None,
+                "follow_up_at": row.get("follow_up_at") if task_type == "blocked" else None,
+                "planned_for": row.get("planned_for"),
+                "today_position": row.get("today_position"),
+                "project_id": project_id,
+                "created_at": row.get("created_at") or utcnow(),
+                "updated_at": row.get("updated_at") or row.get("created_at") or utcnow(),
+                "completed_at": row.get("completed_at"),
+            }
+            conn.execute(insert_task_sql, mapped_task)
+
+        if "tasks" in table_names:
+            conn.execute(sa.text("DROP TABLE tasks"))
+        if "projects" in table_names:
+            conn.execute(sa.text("DROP TABLE projects"))
+
+        conn.execute(sa.text("ALTER TABLE projects_v2 RENAME TO projects"))
+        conn.execute(sa.text("ALTER TABLE tasks_v2 RENAME TO tasks"))
 
 
-class WordReviewUpdate(BaseModel):
-    outcome: Literal["yes", "no"]
-
-
-class WordStats(BaseModel):
-    word_id: int
-    yes_count: int
-    no_count: int
-
-
-@app.post("/api/word_stats/{word_id}", response_model=WordStats)
-def update_word_stats(word_id: int, upd: WordReviewUpdate):
+def normalize_rows():
     with engine.begin() as conn:
-        # ensure row exists
-        exists = conn.execute(
-            sa.select(word_stats.c.word_id).where(word_stats.c.word_id == word_id)
-        ).first()
-        if exists is None:
-            conn.execute(sa.insert(word_stats).values(word_id=word_id, yes_count=0, no_count=1))
-        if upd.outcome == "yes":
+        project_rows = conn.execute(sa.select(projects)).all()
+        for row in project_rows:
+            title = row.title.strip()
+            if not title:
+                title = f"Project {row.id}"
+            normalized_status = row.status if row.status in VALID_STATUSES else "open"
+            if title != row.title or normalized_status != row.status:
+                conn.execute(
+                    sa.update(projects)
+                    .where(projects.c.id == row.id)
+                    .values(title=title, status=normalized_status, updated_at=utcnow())
+                )
+
+        task_rows = conn.execute(sa.select(tasks)).all()
+        for row in task_rows:
+            updates = {}
+            normalized_status = row.status if row.status in VALID_STATUSES else map_old_status(row.status)
+            normalized_type = normalize_area_task_type(row.area, row.task_type if row.task_type in VALID_TYPES else map_old_type(row))
+
+            if normalized_status != row.status:
+                updates["status"] = normalized_status
+            if normalized_type != row.task_type:
+                updates["task_type"] = normalized_type
+            if normalized_type != "deadline" and row.due_at is not None:
+                updates["due_at"] = None
+            if normalized_type != "blocked" and row.follow_up_at is not None:
+                updates["follow_up_at"] = None
+            if row.status == "done" and row.today_position is not None:
+                updates["today_position"] = None
+
+            if row.project_id is not None:
+                project = conn.execute(
+                    sa.select(projects).where(projects.c.id == row.project_id)
+                ).first()
+                if project is None:
+                    updates["project_id"] = None
+                elif project.area != row.area:
+                    updates["area"] = project.area
+                    updates["task_type"] = normalize_area_task_type(project.area, normalized_type)
+
+            if updates:
+                conn.execute(sa.update(tasks).where(tasks.c.id == row.id).values(**updates))
+
+
+def seed_initial_data():
+    with engine.begin() as conn:
+        existing_tasks = conn.execute(
+            sa.select(sa.func.count()).select_from(tasks)
+        ).scalar_one()
+        if existing_tasks > 0:
+            return
+
+        now = utcnow()
+        today = now.date()
+        roadmap_result = conn.execute(
+            sa.insert(projects).values(
+                title="Q2 roadmap",
+                area="work",
+                status="open",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        roadmap_project_id = roadmap_result.inserted_primary_key[0]
+
+        seed_rows = [
+            {
+                "title": "Prepare Q2 roadmap draft",
+                "details": "Turn a loose set of work ideas into a one-page roadmap before the team sync tomorrow.",
+                "area": "work",
+                "status": "open",
+                "task_type": "main",
+                "planned_for": today,
+                "today_position": 1,
+                "project_id": roadmap_project_id,
+            },
+            {
+                "title": "Collect team themes",
+                "details": "Pull the recurring asks from the past two weeks of notes.",
+                "area": "work",
+                "status": "open",
+                "task_type": "main",
+                "project_id": roadmap_project_id,
+            },
+            {
+                "title": "Draft the one-pager",
+                "details": "Limit it to goals, bets, and risks.",
+                "area": "work",
+                "status": "open",
+                "task_type": "main",
+                "project_id": roadmap_project_id,
+            },
+            {
+                "title": "Read scheduler code paths",
+                "details": "Start with wakeup and run-queue selection. Keep this in Today until the shape is clear.",
+                "area": "work",
+                "status": "open",
+                "task_type": "main",
+                "planned_for": today,
+                "today_position": 2,
+            },
+            {
+                "title": "Check CI on PR #184",
+                "details": "The patch is done, but CI is red. Re-check after infra stabilizes before pushing another guess.",
+                "area": "work",
+                "status": "open",
+                "task_type": "blocked",
+                "follow_up_at": now + timedelta(hours=2),
+            },
+            {
+                "title": "File tax extension",
+                "details": "Collect last year documents first, then submit before the deadline turns into a problem.",
+                "area": "life",
+                "status": "open",
+                "task_type": "deadline",
+                "due_at": now + timedelta(days=4),
+            },
+            {
+                "title": "Interesting blog on Linux memory reclaim",
+                "details": "Worth reading, but it should not compete with current work. Keep it accessible and quiet.",
+                "area": "work",
+                "status": "open",
+                "task_type": "backlog",
+            },
+            {
+                "title": "Book dentist appointment",
+                "details": "Captured quickly so it does not disappear. Classify it later if needed.",
+                "area": "life",
+                "status": "open",
+                "task_type": "backlog",
+            },
+        ]
+
+        for row in seed_rows:
+            task_values = {
+                "due_at": None,
+                "follow_up_at": None,
+                "planned_for": None,
+                "today_position": None,
+                "project_id": None,
+                "created_at": now,
+                "updated_at": now,
+                "completed_at": None,
+            }
+            task_values.update(row)
             conn.execute(
-                sa.update(word_stats)
-                .where(word_stats.c.word_id == word_id)
-                .values(yes_count=word_stats.c.yes_count + 1)
+                sa.insert(tasks).values(**task_values)
             )
-        else:
-            conn.execute(
-                sa.update(word_stats)
-                .where(word_stats.c.word_id == word_id)
-                .values(no_count=word_stats.c.no_count + 1)
-            )
-        row = conn.execute(
-            sa.select(word_stats.c.yes_count, word_stats.c.no_count).where(
-                word_stats.c.word_id == word_id
-            )
-        ).one()
-    return {"word_id": word_id, "yes_count": row.yes_count, "no_count": row.no_count}
 
 
-class TopicCreate(BaseModel):
-    name: str = Field(min_length=1)
+def apply_project_to_task_values(conn, current_task, values):
+    if "project_id" in values:
+        if values["project_id"] is None:
+            return
+
+        project = get_project_or_404(conn, values["project_id"])
+        values["area"] = project.area
+        return
+
+    if "area" in values and current_task.project_id is not None:
+        current_project = get_project_or_404(conn, current_task.project_id)
+        if values["area"] != current_project.area:
+            values["project_id"] = None
 
 
-class Topic(BaseModel):
-    id: int
-    name: str
+ensure_schema()
+metadata.create_all(engine)
+normalize_rows()
+seed_initial_data()
 
 
-@app.post("/api/topics", response_model=Topic)
-def add_topic(t: TopicCreate):
-    with engine.begin() as conn:
-        result = conn.execute(sa.insert(topics).values(name=t.name))
-        inserted_pk = result.inserted_primary_key
-        if inserted_pk and len(inserted_pk) > 0:
-            new_id = inserted_pk[0]
-        else:
-            new_id = conn.execute(sa.select(sa.func.max(topics.c.id))).scalar_one()
-    return {"id": new_id, "name": t.name}
-
-
-@app.get("/api/topics", response_model=List[Topic])
-def list_topics():
+@app.get("/api/projects", response_model=List[ProjectOut])
+def list_projects():
     with engine.begin() as conn:
         rows = conn.execute(
-            sa.select(topics.c.id, topics.c.name).order_by(topics.c.id.desc())
+            sa.select(projects).order_by(projects.c.area, projects.c.updated_at.desc())
         ).all()
-    return [{"id": r.id, "name": r.name} for r in rows]
+    return [row_to_project(row) for row in rows]
 
 
-class BackScheduleCreate(BaseModel):
-    name: str = Field(min_length=1)
-    schedule: dict
+@app.post("/api/projects", response_model=ProjectOut)
+def create_project(project: ProjectCreate):
+    now = utcnow()
+    values = project.model_dump()
+    values["title"] = values["title"].strip()
+    if not values["title"]:
+        raise HTTPException(status_code=400, detail="Project title cannot be empty")
+    values["status"] = values["status"] if values["status"] in VALID_STATUSES else "open"
 
+    values["created_at"] = now
+    values["updated_at"] = now
 
-class BackSchedule(BaseModel):
-    id: int
-    name: str
-    schedule: dict
-
-
-@app.post("/api/back_schedules", response_model=BackSchedule)
-def add_back_schedule(s: BackScheduleCreate):
     with engine.begin() as conn:
-        result = conn.execute(sa.insert(back_schedules).values(name=s.name, payload=s.schedule))
-        inserted_pk = result.inserted_primary_key
-        if inserted_pk and len(inserted_pk) > 0:
-            new_id = inserted_pk[0]
-        else:
-            new_id = conn.execute(sa.select(sa.func.max(back_schedules.c.id))).scalar_one()
-    return {"id": new_id, "name": s.name, "schedule": s.schedule}
+        result = conn.execute(sa.insert(projects).values(**values))
+        project_id = result.inserted_primary_key[0]
+        created = get_project_or_404(conn, project_id)
+    return row_to_project(created)
 
 
-@app.get("/api/back_schedules", response_model=List[BackSchedule])
-def list_back_schedules():
+@app.patch("/api/projects/{project_id}", response_model=ProjectOut)
+def update_project(project_id: int, update: ProjectUpdate):
+    values = update.model_dump(exclude_unset=True)
+
+    if "title" in values:
+        values["title"] = values["title"].strip()
+        if not values["title"]:
+            raise HTTPException(status_code=400, detail="Project title cannot be empty")
+
+    if "status" in values and values["status"] not in VALID_STATUSES:
+        values["status"] = "open"
+
+    values["updated_at"] = utcnow()
+
+    with engine.begin() as conn:
+        current = get_project_or_404(conn, project_id)
+
+        if "area" in values and values["area"] != current.area:
+            project_tasks = conn.execute(
+                sa.select(tasks.c.id, tasks.c.task_type).where(tasks.c.project_id == project_id)
+            ).all()
+
+            for project_task in project_tasks:
+                normalized_task_type = normalize_area_task_type(values["area"], project_task.task_type)
+                task_updates = {
+                    "area": values["area"],
+                    "task_type": normalized_task_type,
+                }
+                if normalized_task_type != "deadline":
+                    task_updates["due_at"] = None
+                if normalized_task_type != "blocked":
+                    task_updates["follow_up_at"] = None
+
+                conn.execute(
+                    sa.update(tasks).where(tasks.c.id == project_task.id).values(**task_updates)
+                )
+
+        conn.execute(sa.update(projects).where(projects.c.id == project_id).values(**values))
+        updated = get_project_or_404(conn, project_id)
+
+    return row_to_project(updated)
+
+
+@app.get("/api/tasks", response_model=List[TaskOut])
+def list_tasks():
     with engine.begin() as conn:
         rows = conn.execute(
-            sa.select(back_schedules.c.id, back_schedules.c.name, back_schedules.c.payload)
-            .order_by(back_schedules.c.id.desc())
+            sa.select(tasks).order_by(tasks.c.updated_at.desc())
         ).all()
-    return [{"id": r.id, "name": r.name, "schedule": r.payload} for r in rows]
+    return [row_to_task(row) for row in rows]
 
 
-class BackScheduleUpdate(BaseModel):
-    name: Optional[str] = None
-    schedule: Optional[dict] = None
-
-
-@app.put("/api/back_schedules/{sid}", response_model=BackSchedule)
-def update_back_schedule(sid: int, upd: BackScheduleUpdate):
+@app.get("/api/daily-notes/{note_date}", response_model=DailyNoteOut)
+def get_daily_note(note_date: date):
     with engine.begin() as conn:
-        values = {}
-        if upd.name is not None:
-            values["name"] = upd.name
-        if upd.schedule is not None:
-            values["payload"] = upd.schedule
-        if values:
-            conn.execute(
-                sa.update(back_schedules).where(back_schedules.c.id == sid).values(**values)
-            )
         row = conn.execute(
-            sa.select(back_schedules.c.id, back_schedules.c.name, back_schedules.c.payload).where(back_schedules.c.id == sid)
+            sa.select(daily_notes).where(daily_notes.c.note_date == note_date)
         ).first()
+
         if row is None:
-            # create if missing and full payload provided
-            if upd.name is not None and upd.schedule is not None:
-                result = conn.execute(sa.insert(back_schedules).values(name=upd.name, payload=upd.schedule))
-                inserted_pk = result.inserted_primary_key
-                new_id = inserted_pk[0] if inserted_pk and len(inserted_pk) > 0 else conn.execute(sa.select(sa.func.max(back_schedules.c.id))).scalar_one()
-                return {"id": new_id, "name": upd.name, "schedule": upd.schedule}
-            else:
-                raise ValueError("Schedule not found and insufficient data to create")
-    return {"id": row.id, "name": row.name, "schedule": row.payload}
+            now = utcnow()
+            return {
+                "note_date": note_date,
+                "content": "",
+                "updated_at": now,
+            }
+
+    return row_to_daily_note(row)
+
+
+@app.put("/api/daily-notes/{note_date}", response_model=DailyNoteOut)
+def upsert_daily_note(note_date: date, update: DailyNoteUpdate):
+    now = utcnow()
+    content = update.content or ""
+
+    with engine.begin() as conn:
+        existing = conn.execute(
+            sa.select(daily_notes).where(daily_notes.c.note_date == note_date)
+        ).first()
+
+        if existing is None:
+            conn.execute(
+                sa.insert(daily_notes).values(
+                    note_date=note_date,
+                    content=content,
+                    updated_at=now,
+                )
+            )
+        else:
+            conn.execute(
+                sa.update(daily_notes)
+                .where(daily_notes.c.note_date == note_date)
+                .values(content=content, updated_at=now)
+            )
+
+        saved = conn.execute(
+            sa.select(daily_notes).where(daily_notes.c.note_date == note_date)
+        ).first()
+
+    return row_to_daily_note(saved)
+
+
+@app.post("/api/tasks", response_model=TaskOut)
+def create_task(task: TaskCreate):
+    now = utcnow()
+    values = task.model_dump()
+    values["title"] = values["title"].strip()
+    if not values["title"]:
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+
+    if values["task_type"] != "deadline":
+        values["due_at"] = None
+    if values["task_type"] != "blocked":
+        values["follow_up_at"] = None
+
+    with engine.begin() as conn:
+        if values["project_id"] is not None:
+            project = get_project_or_404(conn, values["project_id"])
+            values["area"] = project.area
+
+        values["task_type"] = normalize_area_task_type(values["area"], values["task_type"])
+        if values.get("planned_for") is None and values.get("today_position") is None:
+            values["today_position"] = None
+        elif values.get("today_position") is None:
+            values["today_position"] = get_next_today_position(conn, values["area"], values["task_type"])
+        values["created_at"] = now
+        values["updated_at"] = now
+
+        if values["status"] == "done" and values["completed_at"] is None:
+            values["completed_at"] = now
+
+        result = conn.execute(sa.insert(tasks).values(**values))
+        task_id = result.inserted_primary_key[0]
+        created = get_task_or_404(conn, task_id)
+    return row_to_task(created)
+
+
+@app.patch("/api/tasks/{task_id}", response_model=TaskOut)
+def update_task(task_id: int, update: TaskUpdate):
+    values = update.model_dump(exclude_unset=True)
+
+    if "title" in values:
+        values["title"] = values["title"].strip()
+        if not values["title"]:
+            raise HTTPException(status_code=400, detail="Title cannot be empty")
+
+    if "status" in values:
+        if values["status"] == "done" and "completed_at" not in values:
+            values["completed_at"] = utcnow()
+            values["planned_for"] = None
+            values["today_position"] = None
+        elif values["status"] == "open" and "completed_at" not in values:
+            values["completed_at"] = None
+
+    values["updated_at"] = utcnow()
+
+    with engine.begin() as conn:
+        current = get_task_or_404(conn, task_id)
+        apply_project_to_task_values(conn, current, values)
+
+        effective_area = values.get("area", current.area)
+        effective_task_type = values.get("task_type", current.task_type)
+        values["task_type"] = normalize_area_task_type(effective_area, effective_task_type)
+        category_changed = effective_area != current.area or values["task_type"] != current.task_type
+
+        if "task_type" in values and values["task_type"] != "deadline":
+            values.setdefault("due_at", None)
+        if "task_type" in values and values["task_type"] != "blocked":
+            values.setdefault("follow_up_at", None)
+        if values.get("planned_for", current.planned_for) is None:
+            values.setdefault("today_position", None)
+        elif "today_position" not in values and (
+            current.today_position is None or category_changed
+        ):
+            values["today_position"] = get_next_today_position(
+                conn,
+                effective_area,
+                values["task_type"],
+                exclude_task_id=task_id,
+            )
+
+        conn.execute(sa.update(tasks).where(tasks.c.id == task_id).values(**values))
+        updated = get_task_or_404(conn, task_id)
+
+    return row_to_task(updated)
+
+
+@app.delete("/api/tasks/{task_id}", status_code=204)
+def delete_task(task_id: int):
+    with engine.begin() as conn:
+        current = get_task_or_404(conn, task_id)
+        conn.execute(sa.delete(tasks).where(tasks.c.id == task_id))
+
+    return Response(status_code=204)
 
 
 @app.get("/api/healthz")
 def healthz():
-    return {"ok": True, "time": datetime.utcnow().isoformat()}
-
-
-# --- Common words service ---
-def _sanitize_word_list(words: List[str]) -> List[str]:
-    cleaned = []
-    for w in words or []:
-        if not isinstance(w, str):
-            continue
-        s = w.strip().lower()
-        if s and all(ch.isalpha() or ch in ("'", "-") for ch in s):
-            cleaned.append(s)
-    # de-duplicate while preserving order
-    seen = set()
-    result = []
-    for w in cleaned:
-        if w not in seen:
-            seen.add(w)
-            result.append(w)
-    return result
-
-
-def _load_common_words_from_file(path: pathlib.Path) -> List[str]:
-    try:
-        if not path.exists():
-            return []
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        # accept JSON array or newline-delimited
-        stripped = text.strip()
-        words: List[str]
-        if stripped.startswith("["):
-            import json
-            arr = json.loads(stripped)
-            words = [str(x) for x in arr if isinstance(x, (str, int, float))]
-        else:
-            words = [ln for ln in stripped.splitlines()]
-        return _sanitize_word_list(words)
-    except Exception:
-        return []
-
-
-COMMON_WORDS_FILE = os.getenv("COMMON_WORDS_FILE") or str((pathlib.Path(__file__).parent / "data" / "common_words.txt"))
-_COMMON_WORDS_LIST = _load_common_words_from_file(pathlib.Path(COMMON_WORDS_FILE))
-
-
-@app.get("/api/common_words", response_model=List[str])
-def get_common_words(count: int = 10):
-    """
-    Return `count` random common English words (no replacement) from the local dataset.
-    """
-    global _COMMON_WORDS_LIST
-    data = _COMMON_WORDS_LIST or []
-    if not data:
-        return []
-    c = max(1, min(int(count or 10), 100))
-    if c >= len(data):
-        # return a shuffled copy of all if requested more than available
-        arr = data[:]
-        random.shuffle(arr)
-        return arr
-    # sample without replacement
-    return random.sample(data, c)
+    return {"ok": True, "time": utcnow().isoformat()}
 
 
 dist_dir = pathlib.Path(__file__).parent / "frontend" / "dist"
-app.mount("/", StaticFiles(directory=dist_dir, html=True), name="frontend")
 
+if dist_dir.exists():
+    app.mount("/", StaticFiles(directory=dist_dir, html=True), name="frontend")
 
-# (Optional) explicit SPA fallback for unknown routes:
-@app.exception_handler(404)
-async def spa_fallback(request, exc):
-    # If it's an API path, keep 404; else serve index.html
-    if request.url.path.startswith("/api/"):
-        return (
-            FileResponse(dist_dir / "404.html")
-            if (dist_dir / "404.html").exists()
-            else FileResponse(dist_dir / "index.html", status_code=404)
-        )
-    return FileResponse(dist_dir / "index.html")
+    @app.exception_handler(404)
+    async def spa_fallback(request, exc):
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+        return FileResponse(dist_dir / "index.html")
