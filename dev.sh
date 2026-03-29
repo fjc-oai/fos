@@ -11,8 +11,18 @@ LOG_FILE="$RUNTIME_DIR/todo.log"
 CLI_DIR="${HOME}/.local/bin"
 CLI_PATH="$CLI_DIR/todo"
 FOS_CLI_PATH="$CLI_DIR/fos"
+HOST="0.0.0.0"
+PORT="8000"
 
 notice() { echo "[dev] $*"; }
+
+lan_url() {
+  local ip
+  ip="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
+  if [ -n "$ip" ]; then
+    echo "http://$ip:$PORT"
+  fi
+}
 
 build_frontend() {
   notice "Building frontend..."
@@ -59,8 +69,11 @@ ensure_venv() {
 serve_backend() {
   cd "$BACKEND_DIR"
   ensure_venv
-  notice "Starting uvicorn at http://localhost:8000 ..."
-  exec uvicorn app:app --reload --port 8000
+  notice "Starting uvicorn at http://localhost:$PORT ..."
+  if [ -n "$(lan_url)" ]; then
+    notice "On your iPhone, open $(lan_url)"
+  fi
+  exec uvicorn app:app --reload --host "$HOST" --port "$PORT"
 }
 
 prepare_runtime() {
@@ -100,20 +113,25 @@ start_background() {
 }
 
 launch_background() {
-  notice "Starting background server at http://localhost:8000 ..."
+  notice "Starting background server at http://localhost:$PORT ..."
+  if [ -n "$(lan_url)" ]; then
+    notice "On your iPhone, open $(lan_url)"
+  fi
   cd "$BACKEND_DIR"
-  LOG_FILE_ENV="$LOG_FILE" PID_FILE_ENV="$PID_FILE" BACKEND_DIR_ENV="$BACKEND_DIR" python3 - <<'PY'
+  LOG_FILE_ENV="$LOG_FILE" PID_FILE_ENV="$PID_FILE" BACKEND_DIR_ENV="$BACKEND_DIR" HOST_ENV="$HOST" PORT_ENV="$PORT" python3 - <<'PY'
 import os
 import subprocess
 
 log_path = os.environ["LOG_FILE_ENV"]
 pid_path = os.environ["PID_FILE_ENV"]
 backend_dir = os.environ["BACKEND_DIR_ENV"]
+host = os.environ["HOST_ENV"]
+port = os.environ["PORT_ENV"]
 uvicorn_bin = os.path.join(backend_dir, ".venv", "bin", "uvicorn")
 
 with open(log_path, "ab", buffering=0) as log_file:
     process = subprocess.Popen(
-        [uvicorn_bin, "app:app", "--host", "127.0.0.1", "--port", "8000"],
+        [uvicorn_bin, "app:app", "--host", host, "--port", port],
         cwd=backend_dir,
         stdin=subprocess.DEVNULL,
         stdout=log_file,
@@ -164,7 +182,10 @@ restart_background() {
 
 status_background() {
   if is_running; then
-    notice "Background server is running (pid $(cat "$PID_FILE")) at http://localhost:8000"
+    notice "Background server is running (pid $(cat "$PID_FILE")) at http://localhost:$PORT"
+    if [ -n "$(lan_url)" ]; then
+      notice "On your iPhone, open $(lan_url)"
+    fi
   else
     notice "Background server is stopped."
   fi
