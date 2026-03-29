@@ -799,6 +799,203 @@ textarea {
   color: var(--ink-soft);
 }
 
+.todo-native-shell {
+  display: grid;
+  gap: 0.9rem;
+  width: 100%;
+  max-width: 100%;
+  padding: calc(5.2rem + env(safe-area-inset-top)) 0.9rem calc(5.5rem + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.todo-native-hero {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.8rem 0.95rem;
+  border-radius: 1.5rem;
+}
+
+.todo-native-hero__copy {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.todo-native-hero__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+}
+
+.todo-native-hero__copy h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.65rem;
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+  color: var(--ink-strong);
+}
+
+.todo-native-hero__stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem 0.7rem;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+.todo-native-capture {
+  padding: 0.95rem;
+  border-radius: 1.35rem;
+}
+
+.todo-native-capture__form {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.todo-native-capture__row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.todo-native-capture__row select,
+.todo-native-capture__row button {
+  width: 100%;
+  min-width: 0;
+}
+
+.todo-native-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding: 0.35rem;
+  border-radius: 1.35rem;
+}
+
+.todo-native-tab {
+  display: grid;
+  gap: 0.2rem;
+  justify-items: center;
+  padding: 0.7rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 1rem;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.todo-native-tab span {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.todo-native-tab--active {
+  border-color: rgba(196, 90, 58, 0.18);
+  background: rgba(255, 244, 238, 0.95);
+  color: var(--accent-strong);
+}
+
+.todo-native-filter-row {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.5rem;
+  border-radius: 1.35rem;
+  scrollbar-width: none;
+}
+
+.todo-native-filter-row::-webkit-scrollbar {
+  display: none;
+}
+
+.todo-native-filter-row .mini-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.todo-native-stack {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.todo-native-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(35, 27, 23, 0.24);
+  backdrop-filter: blur(6px);
+}
+
+.todo-native-sheet {
+  width: 100%;
+  max-height: calc(100svh - 1rem - env(safe-area-inset-top));
+  overflow: auto;
+  border-radius: 1.5rem 1.5rem 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: rgba(244, 239, 230, 0.98);
+  box-shadow: 0 -18px 40px rgba(35, 27, 23, 0.18);
+}
+
+.todo-native-sheet .inspector {
+  height: auto;
+  border-radius: 1.5rem 1.5rem 0 0;
+  box-shadow: none;
+  border: 0;
+  background: transparent;
+}
+
+.todo-native-compose-button {
+  position: fixed;
+  right: 1rem;
+  bottom: calc(1.1rem + env(safe-area-inset-bottom));
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.8rem;
+  height: 3.8rem;
+  border: 1px solid rgba(196, 90, 58, 0.18);
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+  color: #fffdf9;
+  font-size: 2.2rem;
+  line-height: 1;
+  box-shadow: 0 18px 34px rgba(196, 90, 58, 0.28);
+}
+
+.todo-native-bottom-dock {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.35rem;
+}
+
+.todo-native-compose-sheet {
+  width: 100%;
+  display: grid;
+  gap: 1rem;
+  padding: 1.1rem 1rem calc(1.2rem + env(safe-area-inset-bottom));
+  border-radius: 1.5rem 1.5rem 0 0;
+  box-sizing: border-box;
+}
+
+.todo-native-compose-sheet h3 {
+  margin: 0.2rem 0 0;
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--ink-strong);
+}
+
 @media (max-width: 1200px) {
   .app-shell {
     grid-template-columns: 16rem minmax(0, 1fr);

@@ -28,7 +28,7 @@ const CHECKBACK_OPTIONS = [
   { label: "2d", days: 2 },
 ];
 
-function TodoApp() {
+function TodoApp({ isMobile = false }) {
   const [tasks, setTasks] = useState([]);
   const [projects, setProjects] = useState([]);
   const [primaryTab, setPrimaryTab] = useState("today");
@@ -44,6 +44,7 @@ function TodoApp() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isNativeCaptureOpen, setIsNativeCaptureOpen] = useState(false);
   const todayKey = getLocalDateKey(new Date());
 
   useEffect(() => {
@@ -395,6 +396,7 @@ function TodoApp() {
       setCaptureTaskType(getDefaultCaptureTaskType(captureArea));
       setCaptureProjectId("");
       setSelectedTaskId(task.id);
+      setIsNativeCaptureOpen(false);
     }
   }
 
@@ -515,6 +517,304 @@ function TodoApp() {
       tone: deadlineTodayTasks.length > 0 ? "warning" : "neutral",
     },
   ];
+
+  if (isMobile) {
+    return (
+      <div className="todo-native-shell">
+        <header className="todo-native-hero panel-glass">
+          <div className="todo-native-hero__copy">
+            <p className="eyebrow">External Brain</p>
+            <div className="todo-native-hero__row">
+              <h1>Today</h1>
+              <div className="todo-native-hero__stats" aria-label="Summary">
+                <span>{todayCount} today</span>
+                <span>{blockedTodayTasks.length} blocked</span>
+                <span>{deadlineTodayTasks.length} due</span>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {error ? <div className="status-banner">{error}</div> : null}
+        {loading ? <div className="status-banner">Loading tasks...</div> : null}
+
+        <div className="todo-native-stack">
+          {primaryTab === "today" ? (
+            <>
+              <AreaSectionPanel
+                emptyState="No work tasks need attention today."
+                onReorderSection={handleReorderTodaySection}
+                onSelect={setSelectedTaskId}
+                onSetStatus={handleSetTaskStatus}
+                onToggleToday={handleToggleToday}
+                projectById={projectById}
+                sections={todayWorkSections}
+                selectedTaskId={selectedTaskId}
+                title="Work"
+                todayKey={todayKey}
+              />
+
+              <AreaSectionPanel
+                emptyState="No life tasks need attention today."
+                onReorderSection={handleReorderTodaySection}
+                onSelect={setSelectedTaskId}
+                onSetStatus={handleSetTaskStatus}
+                onToggleToday={handleToggleToday}
+                projectById={projectById}
+                sections={todayLifeSections}
+                selectedTaskId={selectedTaskId}
+                title="Life"
+                todayKey={todayKey}
+              />
+              <DailyNotePanel
+                draft={todayNoteDraft}
+                isSaving={isSaving}
+                onChange={setTodayNoteDraft}
+                onSave={saveTodayNote}
+                savedAt={todayNoteSavedAt}
+              />
+            </>
+          ) : primaryTab === "all" ? (
+            <>
+              <AreaSectionPanel
+                emptyState="No open work tasks."
+                onSelect={setSelectedTaskId}
+                onSetStatus={handleSetTaskStatus}
+                onToggleToday={handleToggleToday}
+                projectById={projectById}
+                sections={workSections}
+                selectedTaskId={selectedTaskId}
+                title="Work"
+                todayKey={todayKey}
+              />
+
+              <AreaSectionPanel
+                emptyState="No open life tasks."
+                onSelect={setSelectedTaskId}
+                onSetStatus={handleSetTaskStatus}
+                onToggleToday={handleToggleToday}
+                projectById={projectById}
+                sections={lifeSections}
+                selectedTaskId={selectedTaskId}
+                title="Life"
+                todayKey={todayKey}
+              />
+            </>
+          ) : primaryTab === "done" ? (
+            <TaskCollection
+              emptyState="No finished tasks yet."
+              onDelete={deleteTask}
+              onSelect={setSelectedTaskId}
+              onSetStatus={handleSetTaskStatus}
+              onToggleToday={handleToggleToday}
+              projectById={projectById}
+              selectedTaskId={selectedTaskId}
+              tasks={doneTasks}
+              title="Done"
+              todayKey={todayKey}
+            />
+          ) : primaryTab === "projects" ? (
+            <ProjectsBoard
+              doneProjects={doneProjects}
+              isSaving={isSaving}
+              onCreateProject={createProject}
+              onUpdateProject={patchProject}
+              openProjects={openProjects}
+              taskCountByProjectId={buildTaskCountByProjectId(tasks)}
+            />
+          ) : primaryTab === "areas" ? (
+            <TaskCollection
+              emptyState={getAreaEmptyState(areaTab)}
+              onSelect={setSelectedTaskId}
+              onSetStatus={handleSetTaskStatus}
+              onToggleToday={handleToggleToday}
+              projectById={projectById}
+              selectedTaskId={selectedTaskId}
+              tasks={areaTab === "work" ? workTasks : lifeTasks}
+              title={areaTab === "work" ? "Work" : "Life"}
+              todayKey={todayKey}
+            />
+          ) : (
+            <TaskCollection
+              emptyState={getTypeEmptyState(typeTab)}
+              onSelect={setSelectedTaskId}
+              onSetStatus={handleSetTaskStatus}
+              onToggleToday={handleToggleToday}
+              projectById={projectById}
+              selectedTaskId={selectedTaskId}
+              tasks={getTypeTasks(typeTab, mainTasks, blockedTasks, deadlineTasks, backlogTasks)}
+              title={formatTaskType(typeTab)}
+              todayKey={todayKey}
+            />
+          )}
+        </div>
+
+        <button
+          className="todo-native-compose-button"
+          onClick={() => setIsNativeCaptureOpen(true)}
+          type="button"
+        >
+          +
+        </button>
+
+        <div className="todo-native-bottom-dock">
+          <nav className="todo-native-tabs panel-glass" aria-label="Todo views">
+            <button
+              className={`todo-native-tab ${primaryTab === "today" ? "todo-native-tab--active" : ""}`}
+              onClick={() => setPrimaryTab("today")}
+              type="button"
+            >
+              Today
+              <span>{todayCount}</span>
+            </button>
+            <button
+              className={`todo-native-tab ${primaryTab === "all" ? "todo-native-tab--active" : ""}`}
+              onClick={() => setPrimaryTab("all")}
+              type="button"
+            >
+              All
+              <span>{openTasks.length}</span>
+            </button>
+            <button
+              className={`todo-native-tab ${primaryTab === "done" ? "todo-native-tab--active" : ""}`}
+              onClick={() => setPrimaryTab("done")}
+              type="button"
+            >
+              Done
+              <span>{doneTasks.length}</span>
+            </button>
+            <button
+              className={`todo-native-tab ${primaryTab === "projects" ? "todo-native-tab--active" : ""}`}
+              onClick={() => setPrimaryTab("projects")}
+              type="button"
+            >
+              Projects
+              <span>{openProjects.length}</span>
+            </button>
+          </nav>
+
+          <div className="todo-native-filter-row panel-glass">
+            {AREA_TABS.map((subtab) => (
+              <button
+                key={subtab.id}
+                className={`mini-button ${primaryTab === "areas" && areaTab === subtab.id ? "mini-button--active" : ""}`}
+                onClick={() => {
+                  setPrimaryTab("areas");
+                  setAreaTab(subtab.id);
+                }}
+                type="button"
+              >
+                {subtab.label}
+              </button>
+            ))}
+            {TYPE_TABS.map((subtab) => (
+              <button
+                key={subtab.id}
+                className={`mini-button ${primaryTab === "types" && typeTab === subtab.id ? "mini-button--active" : ""}`}
+                onClick={() => {
+                  setPrimaryTab("types");
+                  setTypeTab(subtab.id);
+                }}
+                type="button"
+              >
+                {formatTaskType(subtab.id)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {isNativeCaptureOpen ? (
+          <div className="todo-native-sheet-backdrop" onClick={() => setIsNativeCaptureOpen(false)}>
+            <div className="todo-native-compose-sheet panel-glass" onClick={(event) => event.stopPropagation()}>
+              <div className="inspector__header">
+                <div>
+                  <p className="eyebrow">New task</p>
+                  <h3>Quick capture</h3>
+                </div>
+                <button className="ghost-button" onClick={() => setIsNativeCaptureOpen(false)} type="button">
+                  Close
+                </button>
+              </div>
+
+              <form className="todo-native-capture__form" onSubmit={handleCreateTask}>
+                <input
+                  id="quick-capture"
+                  autoComplete="off"
+                  autoFocus
+                  className="capture-input"
+                  onChange={(event) => setCaptureTitle(event.target.value)}
+                  placeholder="Add a task"
+                  value={captureTitle}
+                />
+
+                <div className="todo-native-capture__row">
+                  <select
+                    value={captureArea}
+                    onChange={(event) => {
+                      const nextArea = event.target.value;
+                      setCaptureArea(nextArea);
+                      setCaptureTaskType(getDefaultCaptureTaskType(nextArea));
+                      setCaptureProjectId((current) => {
+                        if (!current) {
+                          return "";
+                        }
+                        return openProjects.some(
+                          (project) => String(project.id) === current && project.area === nextArea,
+                        )
+                          ? current
+                          : "";
+                      });
+                    }}
+                  >
+                    <option value="work">Work</option>
+                    <option value="life">Life</option>
+                  </select>
+
+                  <select value={captureTaskType} onChange={(event) => setCaptureTaskType(event.target.value)}>
+                    {getAvailableTaskTypes(captureArea).map((taskType) => (
+                      <option key={taskType} value={taskType}>
+                        {formatTaskType(taskType)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <select value={captureProjectId} onChange={(event) => setCaptureProjectId(event.target.value)}>
+                  <option value="">No project</option>
+                  {captureProjects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.title}
+                    </option>
+                  ))}
+                </select>
+
+                <button className="primary-button" disabled={isSaving} type="submit">
+                  Create task
+                </button>
+              </form>
+            </div>
+          </div>
+        ) : null}
+
+        {selectedTask ? (
+          <div className="todo-native-sheet-backdrop" onClick={() => setSelectedTaskId(null)}>
+            <div className="todo-native-sheet" onClick={(event) => event.stopPropagation()}>
+              <TaskInspector
+                key={`${selectedTask.id}:${selectedTask.updatedAt}`}
+                onSetStatus={handleSetTaskStatus}
+                onSetTaskType={handleSetTaskType}
+                onToggleToday={handleToggleToday}
+                onUpdateTask={patchTask}
+                projects={projects}
+                task={selectedTask}
+                todayKey={todayKey}
+              />
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -815,7 +1115,6 @@ function TodoApp() {
         {selectedTask ? (
           <TaskInspector
             key={`${selectedTask.id}:${selectedTask.updatedAt}`}
-            onClose={() => setSelectedTaskId(null)}
             onSetStatus={handleSetTaskStatus}
             onSetTaskType={handleSetTaskType}
             onToggleToday={handleToggleToday}
@@ -1055,7 +1354,6 @@ function TaskInspector({
   task,
   projects,
   todayKey,
-  onClose,
   onUpdateTask,
   onToggleToday,
   onSetStatus,
@@ -1065,6 +1363,14 @@ function TaskInspector({
 
   async function saveField(fieldName, value) {
     await onUpdateTask(task.id, { [fieldName]: value });
+  }
+
+  async function saveDraft() {
+    await onUpdateTask(task.id, {
+      title: draft.title.trim() || task.title,
+      details: draft.details,
+      dueAt: task.taskType === "deadline" ? localDateToIso(draft.dueDate) : task.dueAt,
+    });
   }
 
   const availableTaskTypes = getAvailableTaskTypes(task.area);
@@ -1083,8 +1389,8 @@ function TaskInspector({
           <p className="eyebrow">Task detail</p>
           <h3>{task.title}</h3>
         </div>
-        <button className="ghost-button" onClick={onClose} type="button">
-          Close
+        <button className="ghost-button" onClick={saveDraft} type="button">
+          Save
         </button>
       </div>
 

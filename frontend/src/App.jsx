@@ -35,14 +35,26 @@ function navigateTo(path) {
 
 function App() {
   const [section, setSection] = useState(getSectionFromLocation());
+  const [isMobile, setIsMobile] = useState(() =>
+    window.matchMedia("(max-width: 700px)").matches,
+  );
 
   useEffect(() => {
     function handlePopState() {
       setSection(getSectionFromLocation());
     }
 
+    const mediaQuery = window.matchMedia("(max-width: 700px)");
+    function handleMediaChange(event) {
+      setIsMobile(event.matches);
+    }
+
     window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
+    mediaQuery.addEventListener("change", handleMediaChange);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      mediaQuery.removeEventListener("change", handleMediaChange);
+    };
   }, []);
 
   const currentSection = useMemo(
@@ -55,10 +67,10 @@ function App() {
   }, [currentSection]);
 
   return (
-    <div className="fos-frame">
+    <div className={`fos-frame ${isMobile ? "fos-frame--mobile" : ""}`}>
       <FeatureNav section={section} />
       <main className="fos-content">
-        {section === "learning" ? <LearningApp /> : <TodoApp />}
+        {section === "learning" ? <LearningApp /> : <TodoApp isMobile={isMobile} />}
       </main>
     </div>
   );

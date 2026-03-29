@@ -10,6 +10,10 @@
   position: relative;
 }
 
+.fos-content {
+  min-width: 0;
+}
+
 .fos-topbar {
   position: fixed;
   top: 1rem;
@@ -99,5 +103,20 @@
   .fos-switcher {
     padding-left: 0.55rem;
   }
+}
 
+@media (max-width: 700px) {
+  .fos-frame--mobile .fos-topbar {
+    top: calc(0.75rem + env(safe-area-inset-top));
+    left: 0.85rem;
+    width: calc(100% - 1.7rem);
+  }
+
+  .fos-frame--mobile .fos-brand__name {
+    font-size: 1.35rem;
+  }
+
+  .fos-frame--mobile .fos-switcher__item {
+    padding: 0.42rem 0.72rem;
+  }
 }
