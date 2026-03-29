@@ -1,42 +1,103 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+.panel-glass {
+  background: rgba(255, 251, 244, 0.78);
+  border: 1px solid rgba(71, 61, 53, 0.09);
+  box-shadow: 0 18px 40px rgba(63, 46, 31, 0.08);
+  backdrop-filter: blur(14px);
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.fos-frame {
+  min-height: 100svh;
+  position: relative;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
+.fos-topbar {
+  position: fixed;
+  top: 1rem;
+  left: 1.6rem;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0;
+  padding: 0.32rem 0.42rem;
+  border-radius: 999px;
+  box-shadow:
+    0 12px 28px rgba(63, 46, 31, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+.fos-topbar__left {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.fos-brand {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.18rem 0 0.3rem;
+  min-width: 0;
+}
+
+.fos-brand__name {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  color: var(--ink-strong);
+}
+
+.fos-switcher {
+  display: inline-flex;
+  gap: 0.3rem;
+  padding-left: 0.4rem;
+  border-left: 1px solid rgba(71, 61, 53, 0.1);
+}
+
+.fos-switcher__item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(71, 61, 53, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  padding: 0.42rem 0.78rem;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.fos-switcher__item:hover {
+  transform: translateY(-1px);
+}
+
+.fos-switcher__item--active {
+  border-color: rgba(196, 90, 58, 0.22);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 245, 234, 0.95),
+    rgba(255, 255, 255, 0.8)
+  );
+}
+
+@media (max-width: 1080px) {
+  .fos-topbar {
+    left: 1rem;
+    width: calc(100% - 2rem);
   }
-  to {
-    transform: rotate(360deg);
+
+  .fos-topbar__left {
+    width: 100%;
+    justify-content: space-between;
   }
-}
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
+  .fos-switcher {
+    padding-left: 0.55rem;
   }
-}
 
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
 }

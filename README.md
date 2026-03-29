@@ -1,102 +1,221 @@
-# 3000r
+# fos
 
-## links
-Render
-- https://three000r-web.onrender.com
-- https://dashboard.render.com/web/srv-d2shk66mcj7s73a5raeg/deploys/dep-d31q4cemcj7s738v6rr0
-Neon
-- https://console.neon.tech/app/projects/mute-mud-01593984/branches/br-winter-king-af7p2cux/sql-editor?database=neondb
-Uptime
-- https://dashboard.uptimerobot.com/monitors/801378548
+`fos` is a personal superapp.
 
-## cmds
-- `npm run build && rm -rf ../backend/frontend/dist && cp -r dist ../backend/frontend/`
-- `uvicorn app:app --reload --port 8000`
-- to fix the python deps conflicts
+The guiding idea comes from the task system that started this repo:
+
+`Decide today, and let the system carry the rest of the mental load.`
+
+The app combines multiple personal workflows under one shell, one backend entrypoint, and one hosted database.
+
+Current sections:
+
+- `todo`
+  - the external-brain task system
+- `3000r`
+  - learning sessions, word review, quiz, topics, and back-mechanic timers
+
+The goal is not a generic productivity suite. The goal is a small set of personal systems that share one home instead of living in separate apps.
+
+## Principle
+
+`fos` is built around a few practical rules:
+
+- reduce cognitive load instead of adding bookkeeping
+- make `Today` explicit
+- keep one shell, but let each feature keep its own data model
+- use one backend entrypoint with feature-specific modules
+
+## Routes
+
+The main routes are:
+
+- `/`
+  - `todo` by default
+- `/brain`
+  - alias for `todo`
+- `/learning`
+  - `3000r`
+
+## Usage
+
+### todo
+
+Use `todo` for:
+
+- work tasks you want to actively move
+- blocked items that need a later check-back
+- deadline tasks that are actually date-driven
+- backlog capture
+- lightweight projects
+- daily notes and a `Closed today` summary
+
+Task model:
+
+- `area`: `work` or `life`
+- `status`: `open` or `done`
+- `task_type`
+  - work: `main`, `blocked`, `deadline`, `backlog`
+  - life: `blocked`, `deadline`, `backlog`
+- optional `project`
+- optional `due_at`
+- optional `follow_up_at`
+- optional `planned_for`
+
+Typical flow:
+
+1. Open `All Tasks`.
+2. Pull what matters into `Today`.
+3. Work from `Today`.
+4. Reorder Today items inside a category by drag and drop.
+5. Close tasks as you finish them.
+6. Use `Closed today` and `Today notes` as the lightweight daily summary.
+
+### 3000r
+
+Use `3000r` for:
+
+- logging learning sessions
+- tracking words and examples
+- reviewing words
+- taking quizzes
+- managing topics
+- running back-mechanic timer presets
+
+The shell now matches `todo` more closely, but the learning workflows still keep the original 3000r functionality.
+
+## Commands
+
+The main script is [dev.sh](/Users/fjc/code/todo/dev.sh).
+
+Common commands:
+
+```bash
+./dev.sh build
+./dev.sh serve
+./dev.sh start
 ```
-cd ~/code/3000r/backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+
+What they do:
+
+- `build`
+  - builds the frontend
+  - copies the build output into `backend/frontend/dist`
+- `serve`
+  - ensures the Python virtualenv exists
+  - installs backend dependencies if needed
+  - runs the backend in the foreground
+- `start`
+  - builds the frontend
+  - runs the backend in the foreground
+
+### Background commands
+
+Install the wrappers once:
+
+```bash
+./dev.sh install-cli
 ```
 
-# Features
+That installs both:
 
-## 26/01/07
-- [x] word quiz
+- `todo`
+- `fos`
 
-## 11/10
-- [x] review words
-  - [x] counters
-  - [x] bi-directional
+under `~/.local/bin`.
 
-## 11/02
-- [x] back mechnican 
-  - [x] customized timer
-  - [x] presets
-  - [ ] bg music
+If needed, add:
 
-## 10/25
-- [x] learning stats
-  - [x] what to show: avg past week, past month, total hours
-  - [x] where to show
-- [x] word bank: show in order
-- [ ] change the layout 
-  - [ ] quick add section
-  - [ ] quick add session provide date
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
 
-## 10/11 
-- [x] bash script to automate cmds
-- [x] word review - alpha 
-   - [x] review mode, e.g. random, past week, reverse chronological, etc
-   - [x] more actions: hint, yes, no
-   - [x] record word familarity, i.e. yes or no
-   - [x] add one more review mode, basedc on familarity, probability distribution
-   - [x] mobile friendly
-- [ ] learning stats: to be discussed about the details
+Then you can use:
 
-## 09/22
-- [x] topic feature
-- [ ] periodically backup db in case Neon is down or misconduct on the db
-- [x] fix timezone issue
-- [x] end timer after words review
+```bash
+fos start
+fos stop
+fos restart
+fos status
+fos logs
+```
 
-## TODO 09/15 (DONE)
-- [x] on the home page, i need to new faeture: 
-so currently we can use start botton to start a session.
-but sometimes i have done learning separately. i only want to record a session, by typing the duration. or i want to record some new words directly.
-could you implement this as another option on 
+or:
 
-- [x] for recent sessions (showing on both home page and start session page), can we show aggregated session info, e.g. instead of showing every session, can you show the learning duration for past a week aggregated per day
+```bash
+todo start
+todo stop
+todo restart
+todo status
+todo logs
+```
 
-- [x] currently i'm using render to deploy this webpage. because i'm using a free plan, so the free instance will spin down with inactivity, which can delay requests by 50 seconds or more.
+Runtime files:
 
-can i somehow activity this webpage by itself (e.g. on backend somehow) every few minutes, to prevent it inactivity?
+- pid file: [/.runtime/todo.pid](/Users/fjc/code/todo/.runtime/todo.pid)
+- log file: [/.runtime/todo.log](/Users/fjc/code/todo/.runtime/todo.log)
 
-## TODO 09/11
-### word review
-- [x] so in the first page, besides start session button, i want to add a new button leading to word bank page.
+## Architecture
 
-- [x] in word bank page, there are several ways to display/filter the words i have added
+### Frontend
 
-- [x] it can show the words added in past a day, a week, a month, or a customized range. it also has an option to show all the words.
+Frontend stack:
 
-- [x] for each word displayed, only show the word itself by default. when hover your mouse, it shows all the example sentences 
-### word test
-- [ ] select words: time based, random, familarity
-- [ ] test. 
-   - [ ] mode 1: show words, click yes or no
-   - [ ] mode 2: show examples, click yes or no, hint shows words
-- [ ] familarity is defined as
-   - [ ] (#yes) / (#yes + #no)
-   - [ ] every new word by default is #yes=0, #no=1
-   - [ ] each click bump either #yes or #no
+- React
+- Vite
+- JSX
+- CSS
 
-## TODO 9.8 (DONE)
-couple feedbacks.
+Frontend structure:
 
-- [x] overall looks great. the word part works well
-- [x] for the session, i don't need "back" button
-- [x] in the first page, let's also show the latest 7 sessions as well
-- [x] when i click end session button, please show a session summary on the right hand, which list all the new words added to the session (you can use the starttime to figure out all the new words)
-- [x] after clicking the start session button, i want to a running clock of how long this session last so far
+- [frontend/src/App.jsx](/Users/fjc/code/todo/frontend/src/App.jsx)
+  - shared `fos` shell and app switcher
+- [frontend/src/features/todo/TodoApp.jsx](/Users/fjc/code/todo/frontend/src/features/todo/TodoApp.jsx)
+  - `todo`
+- [frontend/src/features/learning/LearningApp.jsx](/Users/fjc/code/todo/frontend/src/features/learning/LearningApp.jsx)
+  - `3000r`
+- [frontend/src/features/learning/Review.jsx](/Users/fjc/code/todo/frontend/src/features/learning/Review.jsx)
+- [frontend/src/features/learning/Quiz.jsx](/Users/fjc/code/todo/frontend/src/features/learning/Quiz.jsx)
+- [frontend/src/features/learning/backmech](/Users/fjc/code/todo/frontend/src/features/learning/backmech)
+
+### Backend
+
+Backend stack:
+
+- FastAPI
+- SQLAlchemy Core
+- Postgres on Neon by default
+- optional `DATABASE_URL` override
+
+Backend structure:
+
+- [backend/app.py](/Users/fjc/code/todo/backend/app.py)
+  - shared entrypoint
+  - task/project/daily-note APIs
+  - static frontend serving
+- [backend/modules/study.py](/Users/fjc/code/todo/backend/modules/study.py)
+  - sessions
+  - review sessions
+  - words
+  - topics
+  - back schedules
+  - common words
+
+## Database
+
+The default backend database is the same Neon/Postgres database that `3000r` used.
+
+Separate tables are used for the different domains:
+
+- task tables
+  - `tasks`
+  - `projects`
+  - `daily_notes`
+- learning tables
+  - `sessions`
+  - `review_sessions`
+  - `words`
+  - `word_stats`
+  - `word_examples`
+  - `topics`
+  - `back_schedules`
