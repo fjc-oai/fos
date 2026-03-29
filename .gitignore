@@ -16,7 +16,8 @@ frontend/dist
 frontend/ios/build
 backend/.venv
 backend/app.db
-backend/frontend/dist
+!backend/frontend/dist/
+!backend/frontend/dist/**
 .runtime
 backend/__pycache__/
 __pycache__/
