@@ -1,0 +1,7 @@
+{
+	"appId": "com.fos.app",
+	"appName": "fos",
+	"backgroundColor": "#f4efe6",
+	"webDir": "dist",
+	"packageClassList": []
+}

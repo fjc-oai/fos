@@ -3,8 +3,7 @@ import "./LearningApp.css";
 import Review from "./Review";
 import Quiz from "./Quiz";
 import BackMechTimer from "./backmech/TimerPage";
-
-const API = import.meta.env.VITE_API_URL || "/api";
+import { API } from "../../lib/api.js";
 
 
 function AddTopicForm({ topicName, setTopicName, submitting, onSubmit }) {

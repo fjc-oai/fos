@@ -1,5 +1,6 @@
+import { API } from "../../../lib/api.js";
+
 const KEY = "backmech_schedules_v1";
-const API = import.meta.env.VITE_API_URL || "/api";
 
 export function loadCustomSchedules() {
   try {
@@ -65,5 +66,4 @@ export async function updateServerSchedule(id, name, schedule) {
   }
   return await res.json(); // {id, name, schedule}
 }
-
 

@@ -41,6 +41,9 @@ html {
 body {
   min-height: 100svh;
   margin: 0;
+  width: 100%;
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
 }
 
 body::before {
@@ -99,6 +102,7 @@ button:focus-visible {
 
 #root {
   min-height: 100svh;
+  width: 100%;
 }
 
 a {

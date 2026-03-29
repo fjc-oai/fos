@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-
-const API = import.meta.env.VITE_API_URL || "/api";
+import { API } from "../../lib/api.js";
 
 export default function Review({ onBack }) {
   const [words, setWords] = useState([]);
@@ -496,5 +495,4 @@ export default function Review({ onBack }) {
     </div>
   );
 }
-
 

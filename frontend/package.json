@@ -6,10 +6,17 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "ios:add": "cap add ios",
+    "ios:open": "cap open ios",
+    "ios:sync": "npm run build && cap sync ios",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/cli": "^8.3.0",
+    "@capacitor/core": "^8.3.0",
+    "@capacitor/ios": "^8.3.0",
+    "@neondatabase/serverless": "^1.0.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },

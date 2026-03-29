@@ -165,6 +165,7 @@ Frontend stack:
 - Vite
 - JSX
 - CSS
+- Capacitor for iOS
 
 Frontend structure:
 
@@ -177,6 +178,16 @@ Frontend structure:
 - [frontend/src/features/learning/Review.jsx](/Users/fjc/code/todo/frontend/src/features/learning/Review.jsx)
 - [frontend/src/features/learning/Quiz.jsx](/Users/fjc/code/todo/frontend/src/features/learning/Quiz.jsx)
 - [frontend/src/features/learning/backmech](/Users/fjc/code/todo/frontend/src/features/learning/backmech)
+
+### iOS
+
+The iOS app is a Capacitor shell around the Vite frontend. In native mode, it talks to Neon directly from the app instead of using the local FastAPI backend.
+
+```bash
+cd frontend
+npm run ios:sync
+npm run ios:open
+```
 
 ### Backend
 

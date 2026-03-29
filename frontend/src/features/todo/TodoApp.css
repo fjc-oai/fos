@@ -848,3 +848,108 @@ textarea {
     grid-template-columns: repeat(auto-fit, minmax(5rem, 1fr));
   }
 }
+
+@media (max-width: 700px) {
+  .app-shell {
+    gap: 0.9rem;
+    padding:
+      calc(5.2rem + env(safe-area-inset-top))
+      0.85rem
+      calc(1rem + env(safe-area-inset-bottom));
+  }
+
+  .sidebar {
+    padding: 1rem;
+    border-radius: 1.35rem;
+  }
+
+  .brand-block {
+    display: none;
+  }
+
+  .sidebar-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .nav-group {
+    grid-column: 1 / -1;
+    margin-top: 0;
+  }
+
+  .nav-section-row {
+    display: none;
+  }
+
+  .nav-subtabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    padding-left: 0;
+  }
+
+  .nav-item,
+  .nav-subitem {
+    min-height: 3.4rem;
+    padding: 0.62rem 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .nav-item__label {
+    font-size: 0.98rem;
+    line-height: 1.15;
+  }
+
+  .nav-item__count {
+    min-width: 1.85rem;
+    padding: 0.16rem 0.5rem;
+    font-size: 0.82rem;
+  }
+
+  .workspace-header,
+  .capture-panel,
+  .panel,
+  .inspector,
+  .empty-inspector {
+    border-radius: 1.25rem;
+  }
+
+  .workspace-header {
+    padding: 1rem;
+  }
+
+  .metric-strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 0.6rem;
+  }
+
+  .metric-chip {
+    min-width: 0;
+    padding: 0.75rem 0.85rem;
+  }
+
+  .task-card {
+    padding: 0.55rem 0.7rem;
+  }
+
+  .task-card__topline {
+    align-items: start;
+  }
+
+  .task-card__topline-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .field-grid,
+  .subtask-form {
+    grid-template-columns: 1fr;
+  }
+
+  .segmented-control__button {
+    min-height: 2.7rem;
+    padding-inline: 0.6rem;
+  }
+}

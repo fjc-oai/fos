@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import commonWords from "./data/common-words.json";
-
-const API = import.meta.env.VITE_API_URL || "/api";
+import { API } from "../../lib/api.js";
 
 export default function Quiz({ onBack }) {
   const [mode, setMode] = useState("bank"); // bank | dict
@@ -267,5 +266,4 @@ export default function Quiz({ onBack }) {
     </div>
   );
 }
-
 

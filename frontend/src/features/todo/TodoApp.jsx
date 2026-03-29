@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import "./TodoApp.css";
-
-const API = import.meta.env.VITE_API_URL || "/api";
+import { API } from "../../lib/api.js";
 
 const PRIMARY_TABS = [
   { id: "today", label: "Today" },

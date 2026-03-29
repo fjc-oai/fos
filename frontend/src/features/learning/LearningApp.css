@@ -208,3 +208,60 @@
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 700px) {
+  .learning-shell {
+    gap: 0.9rem;
+    padding:
+      calc(5.2rem + env(safe-area-inset-top))
+      0.85rem
+      calc(1rem + env(safe-area-inset-bottom));
+  }
+
+  .learning-sidebar {
+    padding: 1rem;
+    border-radius: 1.35rem;
+  }
+
+  .learning-brand-block {
+    display: none;
+  }
+
+  .learning-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .learning-nav__item {
+    padding: 0.8rem;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .learning-sidebar-card,
+  .learning-panel,
+  .learning-hero {
+    border-radius: 1.25rem;
+  }
+
+  .learning-hero,
+  .learning-panel {
+    padding: 1rem;
+  }
+
+  .learning-hero h2 {
+    max-width: none;
+    font-size: 1.95rem;
+  }
+
+  .learning-action-card {
+    padding: 1rem;
+    font-size: 1.45rem;
+    min-height: 5rem;
+  }
+
+  .learning-panel-header {
+    align-items: start;
+    flex-direction: column;
+  }
+}
