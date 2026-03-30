@@ -3,6 +3,7 @@ import json
 import os
 import pathlib
 import random
+import re
 from datetime import date as date_cls
 from typing import List, Literal, Optional
 
@@ -351,17 +352,45 @@ def setup_study_module(app, engine, metadata):
                     }
                 ],
                 text={"format": {"type": "json_schema", **schema}},
-                max_output_tokens=1200,
+                max_output_tokens=2000,
             )
         except AuthenticationError as exc:
             raise HTTPException(status_code=401, detail="Invalid OpenAI API key") from exc
         except OpenAIError as exc:
             raise HTTPException(status_code=502, detail=f"OpenAI request failed: {exc}") from exc
 
+        output_text = (getattr(response, "output_text", "") or "").strip()
+        if not output_text:
+            response_status = getattr(response, "status", "unknown")
+            incomplete_details = getattr(response, "incomplete_details", None)
+            print(
+                "scan_words_image empty output",
+                {"status": response_status, "incomplete_details": incomplete_details},
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="OpenAI returned an empty response. Please try again.",
+            )
+
         try:
-            payload = json.loads(response.output_text)
+            payload = json.loads(output_text)
         except json.JSONDecodeError as exc:
-            raise HTTPException(status_code=502, detail="OpenAI returned invalid JSON") from exc
+            normalized_output = re.sub(r"^```(?:json)?\\s*|\\s*```$", "", output_text).strip()
+            json_match = re.search(r"\\{.*\\}", normalized_output, re.DOTALL)
+            if json_match:
+                try:
+                    payload = json.loads(json_match.group(0))
+                except json.JSONDecodeError:
+                    payload = None
+            else:
+                payload = None
+
+            if payload is None:
+                print("scan_words_image invalid json", repr(output_text[:1000]))
+                raise HTTPException(
+                    status_code=502,
+                    detail="OpenAI returned invalid JSON. Please try again.",
+                ) from exc
 
         words_payload = payload.get("words", []) if isinstance(payload, dict) else []
         cleaned_words = []
