@@ -8,6 +8,7 @@ BACKEND_DIR="$ROOT_DIR/backend"
 RUNTIME_DIR="$ROOT_DIR/.runtime"
 PID_FILE="$RUNTIME_DIR/todo.pid"
 LOG_FILE="$RUNTIME_DIR/todo.log"
+BACKUP_FILE="$ROOT_DIR/backups/neon-db-latest.json.gz"
 CLI_DIR="${HOME}/.local/bin"
 CLI_PATH="$CLI_DIR/todo"
 FOS_CLI_PATH="$CLI_DIR/fos"
@@ -213,6 +214,23 @@ logs_background() {
   tail -f "$LOG_FILE"
 }
 
+db_dump() {
+  ensure_venv
+  load_backend_env
+  mkdir -p "$(dirname "$BACKUP_FILE")"
+  cd "$BACKEND_DIR"
+  notice "Dumping database to $BACKUP_FILE ..."
+  .venv/bin/python -m modules.db_backup dump "$BACKUP_FILE"
+}
+
+db_recover() {
+  ensure_venv
+  load_backend_env
+  cd "$BACKEND_DIR"
+  notice "Recovering database from $BACKUP_FILE ..."
+  .venv/bin/python -m modules.db_backup recover "$BACKUP_FILE"
+}
+
 install_cli() {
   mkdir -p "$CLI_DIR"
   for cli in "$CLI_PATH" "$FOS_CLI_PATH"; do
@@ -229,9 +247,10 @@ case "\$cmd" in
   restart) exec "\$ROOT_DIR/dev.sh" bg-restart ;;
   status) exec "\$ROOT_DIR/dev.sh" bg-status ;;
   logs) exec "\$ROOT_DIR/dev.sh" bg-logs ;;
+  db) exec "\$ROOT_DIR/dev.sh" "\$@" ;;
   build|serve|help) exec "\$ROOT_DIR/dev.sh" "\$@" ;;
   *)
-    echo "Usage: \$(basename "\$0") {start|stop|restart|status|logs|build|serve|help}" >&2
+    echo "Usage: \$(basename "\$0") {start|stop|restart|status|logs|db|build|serve|help}" >&2
     exit 1
     ;;
 esac
@@ -277,6 +296,8 @@ Commands:
   bg-restart   Restart the background server
   bg-status    Show background server status
   bg-logs      Tail the background server log
+  db dump      Dump Neon DB to backups/neon-db-latest.json.gz
+  db recover   Recover Neon DB from backups/neon-db-latest.json.gz
   install-cli  Install the 'todo' and 'fos' commands in ~/.local/bin
   deactivate   Deactivate venv (requires: source ./dev.sh deactivate)
   help         Show this help
@@ -293,6 +314,14 @@ case "$cmd" in
   bg-restart) restart_background ;;
   bg-status) status_background ;;
   bg-logs) logs_background ;;
+  db)
+    subcmd="${2:-}"
+    case "$subcmd" in
+      dump) db_dump ;;
+      recover) db_recover ;;
+      *) usage; exit 1 ;;
+    esac
+    ;;
   install-cli) install_cli ;;
   deactivate) deactivate_cmd ;;
   help|*) usage ;;

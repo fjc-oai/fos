@@ -43,6 +43,8 @@ fos stop
 fos restart
 fos status
 fos logs
+fos db dump
+fos db recover
 ```
 
 ### iPhone
@@ -217,3 +219,18 @@ OPENAI_MODEL=gpt-5.4-mini
 ```
 
 See [backend/.env.example](/Users/fjc/code/fos/backend/.env.example).
+
+## Backup
+
+`fos` can dump the Neon database into a compact gzipped JSON file and recover from it later.
+
+```bash
+fos db dump
+fos db recover
+```
+
+Backup file:
+
+- [backups/neon-db-latest.json.gz](/Users/fjc/code/fos/backups/neon-db-latest.json.gz)
+
+`dump` is safe and can be committed to git. `recover` is destructive and replaces the current database table contents with the backup file.
