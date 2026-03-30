@@ -436,7 +436,7 @@ def setup_study_module(app, engine, metadata):
                     }
                 ],
                 text={"format": {"type": "json_schema", **schema}},
-                max_output_tokens=2000,
+                max_output_tokens=4000,
             )
         except AuthenticationError as exc:
             raise HTTPException(status_code=401, detail="Invalid OpenAI API key") from exc
@@ -459,8 +459,8 @@ def setup_study_module(app, engine, metadata):
         try:
             payload = json.loads(output_text)
         except json.JSONDecodeError as exc:
-            normalized_output = re.sub(r"^```(?:json)?\\s*|\\s*```$", "", output_text).strip()
-            json_match = re.search(r"\\{.*\\}", normalized_output, re.DOTALL)
+            normalized_output = re.sub(r"^```(?:json)?\s*|\s*```$", "", output_text).strip()
+            json_match = re.search(r"\{.*\}", normalized_output, re.DOTALL)
             if json_match:
                 try:
                     payload = json.loads(json_match.group(0))
@@ -470,7 +470,29 @@ def setup_study_module(app, engine, metadata):
                 payload = None
 
             if payload is None:
-                print("scan_words_image invalid json", repr(output_text[:1000]))
+                recovered_words = []
+                for word_object in iter_streamed_word_objects(normalized_output):
+                    try:
+                        parsed_word = json.loads(word_object)
+                    except json.JSONDecodeError:
+                        continue
+                    cleaned_word = normalize_scan_word_payload(parsed_word)
+                    if cleaned_word:
+                        recovered_words.append(cleaned_word)
+
+                response_status = getattr(response, "status", "unknown")
+                incomplete_details = getattr(response, "incomplete_details", None)
+                print(
+                    "scan_words_image invalid json",
+                    {
+                        "status": response_status,
+                        "incomplete_details": incomplete_details,
+                        "recovered_words": len(recovered_words),
+                        "output": repr(output_text[:1000]),
+                    },
+                )
+                if recovered_words:
+                    return {"words": recovered_words}
                 raise HTTPException(
                     status_code=502,
                     detail="OpenAI returned invalid JSON. Please try again.",
@@ -590,7 +612,7 @@ def setup_study_module(app, engine, metadata):
                         }
                     ],
                     text={"format": {"type": "json_schema", **schema}},
-                    max_output_tokens=2000,
+                    max_output_tokens=4000,
                     stream=True,
                 )
             except AuthenticationError:
