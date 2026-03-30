@@ -1,138 +1,42 @@
 # fos
 
-`fos` is a personal superapp.
+`fos` is a superapp for personal assistant workflows.
 
-The guiding idea comes from the task system that started this repo:
+It combines the systems I use most often into one app:
 
-`Decide today, and let the system carry the rest of the mental load.`
+- `todo` for tasks, projects, and daily planning
+- `3000r` for English reading sessions, vocabulary capture, review, and quiz
 
-The app combines multiple personal workflows under one shell, one backend entrypoint, and one hosted database.
+The goal is not to build a generic productivity product. The goal is to build a personal assistant that reduces mental load and makes repeated workflows fast on both laptop and iPhone.
 
-Current sections:
+## Links
 
-- `todo`
-  - the external-brain task system
-- `3000r`
-  - learning sessions, word review, quiz, topics, and back-mechanic timers
+- [fos production](https://fos-0vm6.onrender.com/)
+- [Render](https://render.com/)
+- [Neon](https://neon.com/)
 
-The goal is not a generic productivity suite. The goal is a small set of personal systems that share one home instead of living in separate apps.
+## Install fos
 
-## Principle
+### Laptop
 
-`fos` is built around a few practical rules:
-
-- reduce cognitive load instead of adding bookkeeping
-- make `Today` explicit
-- keep one shell, but let each feature keep its own data model
-- use one backend entrypoint with feature-specific modules
-
-## Routes
-
-The main routes are:
-
-- `/`
-  - `todo` by default
-- `/brain`
-  - alias for `todo`
-- `/learning`
-  - `3000r`
-
-## Usage
-
-### todo
-
-Use `todo` for:
-
-- work tasks you want to actively move
-- blocked items that need a later check-back
-- deadline tasks that are actually date-driven
-- backlog capture
-- lightweight projects
-- daily notes and a `Closed today` summary
-
-Task model:
-
-- `area`: `work` or `life`
-- `status`: `open` or `done`
-- `task_type`
-  - work: `main`, `blocked`, `deadline`, `backlog`
-  - life: `blocked`, `deadline`, `backlog`
-- optional `project`
-- optional `due_at`
-- optional `follow_up_at`
-- optional `planned_for`
-
-Typical flow:
-
-1. Open `All Tasks`.
-2. Pull what matters into `Today`.
-3. Work from `Today`.
-4. Reorder Today items inside a category by drag and drop.
-5. Close tasks as you finish them.
-6. Use `Closed today` and `Today notes` as the lightweight daily summary.
-
-### 3000r
-
-Use `3000r` for:
-
-- logging learning sessions
-- tracking words and examples
-- reviewing words
-- taking quizzes
-- managing topics
-- running back-mechanic timer presets
-
-The shell now matches `todo` more closely, but the learning workflows still keep the original 3000r functionality.
-
-## Commands
-
-The main script is [dev.sh](/Users/fjc/code/todo/dev.sh).
-
-Common commands:
+Clone the repo, then run:
 
 ```bash
-./dev.sh build
-./dev.sh serve
 ./dev.sh start
 ```
 
-What they do:
+That will:
 
-- `build`
-  - builds the frontend
-  - copies the build output into `backend/frontend/dist`
-- `serve`
-  - ensures the Python virtualenv exists
-  - installs backend dependencies if needed
-  - runs the backend in the foreground
-- `start`
-  - builds the frontend
-  - runs the backend in the foreground
+- build the frontend
+- copy it into `backend/frontend/dist`
+- create the Python virtualenv if needed
+- install backend dependencies
+- start FastAPI on `http://localhost:8000`
 
-### Background commands
-
-Install the wrappers once:
+For background usage:
 
 ```bash
 ./dev.sh install-cli
-```
-
-That installs both:
-
-- `todo`
-- `fos`
-
-under `~/.local/bin`.
-
-If needed, add:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Then you can use:
-
-```bash
 fos start
 fos stop
 fos restart
@@ -140,82 +44,175 @@ fos status
 fos logs
 ```
 
-or:
+### iPhone
 
-```bash
-todo start
-todo stop
-todo restart
-todo status
-todo logs
-```
+The iPhone version is the Safari web app.
 
-Runtime files:
+1. Start the app on your laptop with `./dev.sh start` or `fos start`
+2. Make sure your iPhone is on the same Wi-Fi
+3. Open `http://<your-laptop-ip>:8000` in Safari
+4. Tap **Share** -> **Add to Home Screen**
 
-- pid file: [/.runtime/todo.pid](/Users/fjc/code/todo/.runtime/todo.pid)
-- log file: [/.runtime/todo.log](/Users/fjc/code/todo/.runtime/todo.log)
+For the hosted version, open [fos production](https://fos-0vm6.onrender.com/) in Safari and add it to Home Screen the same way.
+
+## Use fos
+
+### Laptop
+
+Use the top-left switcher to move between `todo` and `3000r`.
+
+Laptop is the best mode for:
+
+- planning today
+- editing task details
+- reviewing larger task/project lists
+- browsing word bank entries
+
+### iPhone
+
+iPhone Safari is optimized for fast capture and review.
+
+iPhone is the best mode for:
+
+- adding tasks quickly
+- checking today’s tasks
+- logging a reading session
+- scanning magazine vocabulary from a photo
+- reviewing words
+- taking quizzes
+
+## todo
+
+### Motivation
+
+`todo` is built as an external brain for tasks.
+
+The core idea is:
+
+`Decide today, and let the system carry the rest of the mental load.`
+
+It separates what I need to do today from everything else, while still keeping blocked work, deadlines, backlog, and projects in one place.
+
+### Major Usage
+
+- capture tasks into work/life
+- plan tasks into `Today`
+- track `main`, `blocked`, `deadline`, and `backlog` items
+- set follow-up times for blocked tasks
+- manage lightweight projects
+- write a daily note
+- review what was closed today
+
+On iPhone, `todo` uses a mobile-specific layout with a compact header, bottom navigation, and popup task creation.
+
+### Software Architecture
+
+Frontend:
+
+- [frontend/src/features/todo/TodoApp.jsx](/Users/fjc/code/fos/frontend/src/features/todo/TodoApp.jsx)
+- [frontend/src/features/todo/TodoApp.css](/Users/fjc/code/fos/frontend/src/features/todo/TodoApp.css)
+
+Backend:
+
+- [backend/app.py](/Users/fjc/code/fos/backend/app.py)
+
+Data model:
+
+- `tasks`
+- `projects`
+- `daily_notes`
+
+## 3000r
+
+### Motivation
+
+`3000r` is built for English learning through reading.
+
+The main workflow is:
+
+1. read magazines
+2. highlight words I do not know
+3. scan the page with iPhone
+4. extract vocabulary with OpenAI
+5. save the word, meaning, and sentence into Word Bank
+6. review and quiz later
+
+It is optimized for fast session logging and vocabulary capture, not generic flashcards.
+
+### Major Usage
+
+- quick add a reading session
+- start a live timer
+- scan a magazine photo to extract highlighted words
+- save selected words into Word Bank
+- play pronunciation audio
+- review by word or meaning
+- use hints with meaning + sentence
+- quiz words
+
+On iPhone, `3000r` is optimized around quick session logging, scan photo, and review.
+
+### Software Architecture
+
+Frontend:
+
+- [frontend/src/features/learning/LearningApp.jsx](/Users/fjc/code/fos/frontend/src/features/learning/LearningApp.jsx)
+- [frontend/src/features/learning/LearningApp.css](/Users/fjc/code/fos/frontend/src/features/learning/LearningApp.css)
+- [frontend/src/features/learning/Review.jsx](/Users/fjc/code/fos/frontend/src/features/learning/Review.jsx)
+- [frontend/src/features/learning/Quiz.jsx](/Users/fjc/code/fos/frontend/src/features/learning/Quiz.jsx)
+
+Backend:
+
+- [backend/modules/study.py](/Users/fjc/code/fos/backend/modules/study.py)
+
+Data model:
+
+- `sessions`
+- `review_sessions`
+- `words`
+- `word_stats`
+- `word_examples`
+
+External services:
+
+- OpenAI for photo vocabulary extraction
+- DictionaryAPI.dev for pronunciation audio fallback lookup
+- Neon Postgres for hosted database
 
 ## Architecture
 
 ### Frontend
-
-Frontend stack:
 
 - React
 - Vite
 - JSX
 - CSS
 
-Frontend structure:
+Shared shell:
 
-- [frontend/src/App.jsx](/Users/fjc/code/todo/frontend/src/App.jsx)
-  - shared `fos` shell and app switcher
-- [frontend/src/features/todo/TodoApp.jsx](/Users/fjc/code/todo/frontend/src/features/todo/TodoApp.jsx)
-  - `todo`
-- [frontend/src/features/learning/LearningApp.jsx](/Users/fjc/code/todo/frontend/src/features/learning/LearningApp.jsx)
-  - `3000r`
-- [frontend/src/features/learning/Review.jsx](/Users/fjc/code/todo/frontend/src/features/learning/Review.jsx)
-- [frontend/src/features/learning/Quiz.jsx](/Users/fjc/code/todo/frontend/src/features/learning/Quiz.jsx)
-- [frontend/src/features/learning/backmech](/Users/fjc/code/todo/frontend/src/features/learning/backmech)
+- [frontend/src/App.jsx](/Users/fjc/code/fos/frontend/src/App.jsx)
+- [frontend/src/App.css](/Users/fjc/code/fos/frontend/src/App.css)
 
 ### Backend
 
-Backend stack:
-
 - FastAPI
 - SQLAlchemy Core
-- Postgres on Neon by default
-- optional `DATABASE_URL` override
+- Postgres on Neon
+- static frontend serving from `backend/frontend/dist`
 
-Backend structure:
+Entrypoints:
 
-- [backend/app.py](/Users/fjc/code/todo/backend/app.py)
-  - shared entrypoint
-  - task/project/daily-note APIs
-  - static frontend serving
-- [backend/modules/study.py](/Users/fjc/code/todo/backend/modules/study.py)
-  - sessions
-  - review sessions
-  - words
-  - topics
-  - back schedules
-  - common words
+- [backend/app.py](/Users/fjc/code/fos/backend/app.py)
+- [backend/modules/study.py](/Users/fjc/code/fos/backend/modules/study.py)
 
-## Database
+## Environment
 
-The default backend database is the same Neon/Postgres database that `3000r` used.
+Backend env vars:
 
-Separate tables are used for the different domains:
+```bash
+DATABASE_URL=postgresql+psycopg://...
+OPENAI_API_KEY=...
+OPENAI_MODEL=gpt-5.4-mini
+```
 
-- task tables
-  - `tasks`
-  - `projects`
-  - `daily_notes`
-- learning tables
-  - `sessions`
-  - `review_sessions`
-  - `words`
-  - `word_stats`
-  - `word_examples`
-  - `topics`
-  - `back_schedules`
+See [backend/.env.example](/Users/fjc/code/fos/backend/.env.example).
