@@ -177,7 +177,7 @@ export default function Quiz({ onBack }) {
   return (
     <div style={containerStyle}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 8 }}>
-        <button onClick={onBack} style={{ padding: "0.5rem 0.75rem" }}>Back</button>
+        <button onClick={onBack} style={{ padding: "0.5rem 0.75rem" }}>Exit</button>
         <h2 style={{ margin: 0 }}>Quiz</h2>
       </div>
       <div style={controlsStyle}>
@@ -202,6 +202,11 @@ export default function Quiz({ onBack }) {
         <button onClick={startQuiz} disabled={loading} style={{ padding: "0.5rem 1rem" }}>
           {started ? "Restart" : "Start"}
         </button>
+        {started && !finished ? (
+          <button onClick={onBack} style={{ padding: "0.5rem 1rem" }}>
+            Exit
+          </button>
+        ) : null}
         <span style={{ fontSize: 18, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
           {started ? `${Math.min(currentIndex + 1, totalQuestions)}/${totalQuestions}` : "0/0"}
         </span>
@@ -220,6 +225,7 @@ export default function Quiz({ onBack }) {
           <div style={{ fontSize: 40, fontWeight: 700 }}>{score} / {totalQuestions}</div>
           <div style={{ marginTop: 16 }}>
             <button onClick={startQuiz} style={{ padding: "0.5rem 1rem" }}>Retake</button>
+            <button onClick={onBack} style={{ padding: "0.5rem 1rem", marginLeft: 12 }}>Exit</button>
           </div>
         </div>
       ) : loading ? (
@@ -267,5 +273,4 @@ export default function Quiz({ onBack }) {
     </div>
   );
 }
-
 

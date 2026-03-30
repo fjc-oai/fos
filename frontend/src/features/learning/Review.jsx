@@ -19,13 +19,10 @@ export default function Review({ onBack }) {
   const [nowMs, setNowMs] = useState(Date.now());
   const [reviewedCount, setReviewedCount] = useState(0);
   // Question prompt state:
-  // - type: "word" | "sentence"
+  // - type: "word" | "meaning"
   // - text: string (for "word" mode)
-  // - sentences: string[] (masked sentences for "sentence" mode)
+  // - text: string (for "meaning" mode)
   const [questionPrompt, setQuestionPrompt] = useState({ type: "word", text: "" });
-  // Dictionary definitions (for hint/explanation)
-  const [dictDefs, setDictDefs] = useState([]);
-  const [dictLoading, setDictLoading] = useState(false);
   // Pause state
   const [reviewPaused, setReviewPaused] = useState(false);
   const [pauseStartedAt, setPauseStartedAt] = useState(null);
@@ -97,9 +94,8 @@ export default function Review({ onBack }) {
       let url = `${API}/words`;
       const params = [];
       if (m === "yesterday") {
-        const y = isoNDaysAgo(1);
-        params.push(`start=${encodeURIComponent(y)}`);
-        params.push(`end=${encodeURIComponent(y)}`);
+        params.push(`start=${encodeURIComponent(isoNDaysAgo(1))}`);
+        params.push(`end=${encodeURIComponent(todayIso())}`);
       } else if (m === "last_week") {
         params.push(`start=${encodeURIComponent(isoNDaysAgo(6))}`);
         params.push(`end=${encodeURIComponent(todayIso())}`);
@@ -160,79 +156,28 @@ export default function Review({ onBack }) {
     return parts.filter(Boolean).length;
   }
 
-  function isSentenceText(s) {
-    return countWords(s) > 5;
-  }
-
-  function escapeRegExp(str) {
-    return (str || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  }
-
-  function buildWordForms(word) {
-    if (!word || typeof word !== "string") return [];
-    const w = word.toLowerCase();
-    const forms = new Set([w]);
-    // Basic plural/3rd person
-    forms.add(w + "s");
-    forms.add(w + "es");
-    // Past and present participle
-    if (w.endsWith("y") && w.length > 1 && !/[aeiou]/i.test(w[w.length - 2])) {
-      // study -> studies, studied, studying
-      forms.add(w.slice(0, -1) + "ies");
-      forms.add(w.slice(0, -1) + "ied");
-      forms.add(w.slice(0, -1) + "ying");
-    } else if (w.endsWith("e")) {
-      // live -> lived, living
-      forms.add(w + "d");
-      forms.add(w.slice(0, -1) + "ing");
-    } else {
-      forms.add(w + "ed");
-      forms.add(w + "ing");
+  function getMeaningText(word) {
+    if (word?.meaning) {
+      return word.meaning;
     }
-    return Array.from(forms);
+
+    const examples = Array.isArray(word?.examples) ? word.examples : [];
+    const meaningExample = examples.find((example) => /^meaning:/i.test(example.trim()));
+    return meaningExample ? meaningExample.replace(/^meaning:\s*/i, "") : "";
   }
 
-  function maskWordInSentence(sentence, word) {
-    if (!sentence || !word) return { text: sentence || "", found: false };
-    const forms = buildWordForms(word).map((f) => escapeRegExp(f));
-    const pattern = new RegExp(`\\b(?:${forms.join("|")})\\b`, "gi");
-    let matched = false;
-    const masked = sentence.replace(pattern, (m) => {
-      matched = true;
-      return "_".repeat(m.length);
-    });
-    // If not matched (e.g., example is an explanation), return original per requirement
-    return { text: masked, found: matched };
-  }
-
-  function extractDefinitionsFromApi(data) {
-    try {
-      if (!Array.isArray(data)) return [];
-      const defs = [];
-      for (const entry of data) {
-        const meanings = Array.isArray(entry?.meanings) ? entry.meanings : [];
-        for (const meaning of meanings) {
-          const ds = Array.isArray(meaning?.definitions) ? meaning.definitions : [];
-          for (const d of ds) {
-            const defText = (d?.definition || "").trim();
-            if (defText) defs.push(defText);
-          }
-        }
-      }
-      // de-duplicate while preserving order
-      const seen = new Set();
-      const unique = [];
-      for (const d of defs) {
-        if (!seen.has(d)) {
-          seen.add(d);
-          unique.push(d);
-        }
-      }
-      // cap to avoid overly long hints
-      return unique.slice(0, 5);
-    } catch {
-      return [];
+  function getSentenceText(word) {
+    if (word?.sentence) {
+      return word.sentence;
     }
+
+    const examples = Array.isArray(word?.examples) ? word.examples : [];
+    const sentenceExample = examples.find((example) => /^sentence:/i.test(example.trim()));
+    if (sentenceExample) {
+      return sentenceExample.replace(/^sentence:\s*/i, "");
+    }
+
+    return examples.find((example) => countWords(example) > 5) || "";
   }
 
   function weightedOrder(n, weights) {
@@ -293,55 +238,18 @@ export default function Review({ onBack }) {
   useEffect(() => {
     if (!currentWord) {
       setQuestionPrompt({ type: "word", text: "" });
-      setDictDefs([]);
       return;
     }
     // reset hint when switching to a new word
     setShowHint(false);
 
-    const examples = Array.isArray(currentWord.examples) ? currentWord.examples : [];
-    const sentenceCandidates = examples.filter((ex) => isSentenceText(ex));
-    const isPhraseWord = countWords(currentWord.word) > 1;
-    const shouldUseSentence = !isPhraseWord && sentenceCandidates.length > 0 && Math.random() < 0.5;
-    if (shouldUseSentence) {
-      const maskedAll = sentenceCandidates.map((s) => {
-        const { text } = maskWordInSentence(s, currentWord.word);
-        return text || s;
-      });
-      setQuestionPrompt({ type: "sentence", sentences: maskedAll });
+    const meaning = getMeaningText(currentWord);
+    if (meaning && Math.random() < 0.5) {
+      setQuestionPrompt({ type: "meaning", text: meaning });
     } else {
       setQuestionPrompt({ type: "word", text: currentWord.word });
     }
   }, [currentWord]);
-
-  // Fetch dictionary definitions (Free Dictionary API)
-  useEffect(() => {
-    const w = currentWord?.word;
-    if (!w) {
-      setDictDefs([]);
-      return;
-    }
-    let aborted = false;
-    async function load() {
-      try {
-        setDictLoading(true);
-        const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`);
-        if (!res.ok) {
-          setDictDefs([]);
-          return;
-        }
-        const data = await res.json();
-        if (aborted) return;
-        setDictDefs(extractDefinitionsFromApi(data));
-      } catch {
-        if (!aborted) setDictDefs([]);
-      } finally {
-        if (!aborted) setDictLoading(false);
-      }
-    }
-    load();
-    return () => { aborted = true; };
-  }, [currentWord?.word]);
 
   async function submitOutcome(outcome) {
     const w = currentWord;
@@ -406,15 +314,15 @@ export default function Review({ onBack }) {
         <div style={sidebarStyle}>
         {isMobile ? (
           <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", marginBottom: 6 }}>
-            <button onClick={endReview} disabled={reviewEnded} style={primaryBtnStyle}>{reviewEnded ? "Session Ended" : "End Session"}</button>
             <button onClick={togglePause} disabled={reviewEnded} style={secondaryBtnStyle}>{reviewPaused ? "Resume" : "Pause"}</button>
-            <button onClick={onBack} style={secondaryBtnStyle}>Back</button>
+            <button onClick={endReview} disabled={reviewEnded} style={primaryBtnStyle}>{reviewEnded ? "Done" : "Done"}</button>
+            <button onClick={onBack} style={secondaryBtnStyle}>Exit</button>
           </div>
         ) : (
           <>
-            <button onClick={endReview} disabled={reviewEnded} style={primaryBtnStyle}>{reviewEnded ? "Session Ended" : "End Session"}</button>
             <button onClick={togglePause} disabled={reviewEnded} style={secondaryBtnStyle}>{reviewPaused ? "Resume" : "Pause"}</button>
-            <button onClick={onBack} style={secondaryBtnStyle}>Back</button>
+            <button onClick={endReview} disabled={reviewEnded} style={primaryBtnStyle}>Done</button>
+            <button onClick={onBack} style={secondaryBtnStyle}>Exit</button>
           </>
         )}
         <div style={{ color: "#666", fontSize: isMobile ? 12 : 14, marginBottom: 6 }}>
@@ -439,6 +347,15 @@ export default function Review({ onBack }) {
               <option value="last_month">Last month</option>
             </select>
           </label>
+          <button onClick={togglePause} disabled={reviewEnded} style={{ padding: isMobile ? "0.5rem 0.75rem" : "0.5rem 1rem" }}>
+            {reviewPaused ? "Resume" : "Pause"}
+          </button>
+          <button onClick={endReview} disabled={reviewEnded} style={{ padding: isMobile ? "0.5rem 0.75rem" : "0.5rem 1rem" }}>
+            Done
+          </button>
+          <button onClick={onBack} style={{ padding: isMobile ? "0.5rem 0.75rem" : "0.5rem 1rem" }}>
+            Exit
+          </button>
           <button onClick={() => setSidebarOpen((v) => !v)} style={{ padding: isMobile ? "0.5rem 0.75rem" : "0.5rem 1rem" }}>
             {sidebarOpen ? "Hide Panel" : "Show Panel"}
           </button>
@@ -456,33 +373,23 @@ export default function Review({ onBack }) {
           <p>No words available.</p>
         ) : (
           <div>
-            <div style={{ fontSize: questionPrompt.type === "sentence" ? (isMobile ? 20 : 24) : (isMobile ? 32 : 36), marginBottom: 16, textAlign: "center" }}>
-              {questionPrompt.type === "sentence" ? (
-                <>
-                  <ul style={{ listStyle: "disc", textAlign: "left", display: "inline-block", paddingLeft: 18, margin: 0, lineHeight: 1.5 }}>
-                    {(questionPrompt.sentences || []).map((s, idx) => (
-                      <li key={idx} style={{ color: "#222" }}>{s}</li>
-                    ))}
-                  </ul>
-                  <div style={{ marginTop: 10, color: "#333", fontSize: isMobile ? 14 : 16 }}>
-                    <span style={{ fontWeight: 600 }}>Meaning:</span>{" "}
-                    {dictLoading ? "Loading…" : (dictDefs && dictDefs.length > 0 ? dictDefs[0] : "—")}
-                  </div>
-                </>
+            <div style={{ fontSize: questionPrompt.type === "meaning" ? (isMobile ? 20 : 24) : (isMobile ? 32 : 36), marginBottom: 16, textAlign: "center", whiteSpace: "pre-wrap", lineHeight: 1.4 }}>
+              {questionPrompt.type === "meaning" ? (
+                <span>{questionPrompt.text}</span>
               ) : (
                 <strong>{currentWord.word}</strong>
               )}
             </div>
             {showHint && (
               <div style={{ marginBottom: 16 }}>
-                {currentWord.examples && currentWord.examples.length > 0 && (
-                  <ul style={{ paddingLeft: 18, marginTop: 4, marginBottom: 8, lineHeight: 1.5 }}>
-                    {currentWord.examples.map((ex, idx) => (
-                      <li key={idx} style={{ color: "#444" }}>{ex}</li>
-                    ))}
-                  </ul>
-                )}
-                {/* Definitions are shown above in sentence mode; no need to repeat in Hint */}
+                <div style={{ color: "#222", fontSize: isMobile ? 20 : 24, fontWeight: 700, marginBottom: 12, textAlign: "center" }}>
+                  {questionPrompt.type === "meaning" ? currentWord.word : getMeaningText(currentWord) || "—"}
+                </div>
+                {getSentenceText(currentWord) ? (
+                  <div style={{ color: "#444", fontSize: isMobile ? 16 : 18, lineHeight: 1.5, whiteSpace: "pre-wrap", textAlign: "center" }}>
+                    {getSentenceText(currentWord)}
+                  </div>
+                ) : null}
               </div>
             )}
             <div style={{ display: "flex", gap: 12, justifyContent: isMobile ? "center" : "flex-start", flexWrap: "wrap" }}>
@@ -496,5 +403,3 @@ export default function Review({ onBack }) {
     </div>
   );
 }
-
-

@@ -1,11 +1,13 @@
+import base64
 import json
 import os
 import pathlib
 import random
-from datetime import date
+from datetime import date as date_cls
 from typing import List, Literal, Optional
 
 import sqlalchemy as sa
+from fastapi import File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 
@@ -29,6 +31,8 @@ def setup_study_module(app, engine, metadata):
         metadata,
         sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
         sa.Column("word", sa.String(255), nullable=False),
+        sa.Column("meaning", sa.Text, nullable=False, server_default=""),
+        sa.Column("sentence", sa.Text, nullable=False, server_default=""),
         sa.Column("date", sa.Date, nullable=False),
     )
     word_stats = sa.Table(
@@ -71,22 +75,26 @@ def setup_study_module(app, engine, metadata):
     )
 
     class Session(BaseModel):
-        date: date
+        date: date_cls
         duration: int = Field(gt=0, le=1440)
 
     class ReviewSession(BaseModel):
-        date: date
+        date: date_cls
         duration: int = Field(gt=0, le=1440)
 
     class WordCreate(BaseModel):
         word: str = Field(min_length=1)
-        examples: List[str] = Field(min_items=1)
-        date: Optional[date] = None
+        meaning: str = ""
+        sentence: str = ""
+        examples: List[str] = Field(default_factory=list)
+        date: Optional[date_cls] = None
 
     class Word(BaseModel):
         id: int
         word: str
-        date: date
+        meaning: str = ""
+        sentence: str = ""
+        date: date_cls
         examples: List[str]
         yes_count: int = 0
         no_count: int = 1
@@ -118,6 +126,62 @@ def setup_study_module(app, engine, metadata):
     class BackScheduleUpdate(BaseModel):
         name: Optional[str] = None
         schedule: Optional[dict] = None
+
+    class ScanWord(BaseModel):
+        word: str = ""
+        ipa: str = ""
+        meaning_en: str = ""
+        meaning_zh: str = ""
+        roots: str = ""
+        memory_connections: str = ""
+        nuance: str = ""
+        sentence_en: str = ""
+        sentence_zh: str = ""
+        confidence: float = 0
+
+    class ScanWordsResponse(BaseModel):
+        words: List[ScanWord]
+
+    def ensure_study_schema():
+        inspector = sa.inspect(engine)
+        if "words" not in inspector.get_table_names():
+            return
+
+        word_columns = {column["name"] for column in inspector.get_columns("words")}
+        with engine.begin() as conn:
+            if "meaning" not in word_columns:
+                conn.execute(sa.text("ALTER TABLE words ADD COLUMN meaning TEXT NOT NULL DEFAULT ''"))
+            if "sentence" not in word_columns:
+                conn.execute(sa.text("ALTER TABLE words ADD COLUMN sentence TEXT NOT NULL DEFAULT ''"))
+
+            if "meaning" not in word_columns or "sentence" not in word_columns:
+                rows = conn.execute(sa.select(words.c.id)).all()
+                example_rows = conn.execute(
+                    sa.select(word_examples.c.word_id, word_examples.c.example).order_by(word_examples.c.id)
+                ).all()
+                examples_by_word_id = {}
+                for word_id, example in example_rows:
+                    examples_by_word_id.setdefault(word_id, []).append(example)
+
+                for row in rows:
+                    parsed_meaning = ""
+                    parsed_sentence = ""
+                    for example in examples_by_word_id.get(row.id, []):
+                        value = (example or "").strip()
+                        lower_value = value.lower()
+                        if not parsed_meaning and lower_value.startswith("meaning:"):
+                            parsed_meaning = value.split(":", 1)[1].strip()
+                        elif not parsed_sentence and lower_value.startswith("sentence:"):
+                            parsed_sentence = value.split(":", 1)[1].strip()
+
+                    if parsed_meaning or parsed_sentence:
+                        conn.execute(
+                            sa.update(words)
+                            .where(words.c.id == row.id)
+                            .values(meaning=parsed_meaning, sentence=parsed_sentence)
+                        )
+
+    ensure_study_schema()
 
     def sanitize_word_list(items: List[str]) -> List[str]:
         cleaned = []
@@ -195,13 +259,151 @@ def setup_study_module(app, engine, metadata):
             ).all()
         return [{"date": row.date, "duration": row.duration} for row in rows]
 
+    @app.post("/api/learning/scan-words", response_model=ScanWordsResponse)
+    async def scan_words_image(image: UploadFile = File(...)):
+        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        if not api_key:
+            raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set")
+
+        content_type = image.content_type or ""
+        if not content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Please upload an image")
+
+        image_bytes = await image.read()
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail="Uploaded image is empty")
+        if len(image_bytes) > 12 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Image must be 12MB or smaller")
+
+        from openai import AuthenticationError, OpenAI, OpenAIError
+
+        client = OpenAI(api_key=api_key)
+        model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
+        data_url = f"data:{content_type};base64,{base64.b64encode(image_bytes).decode('ascii')}"
+
+        schema = {
+            "name": "magazine_words",
+            "schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "words": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "word": {"type": "string"},
+                                "ipa": {"type": "string"},
+                                "meaning_en": {"type": "string"},
+                                "meaning_zh": {"type": "string"},
+                                "roots": {"type": "string"},
+                                "memory_connections": {"type": "string"},
+                                "nuance": {"type": "string"},
+                                "sentence_en": {"type": "string"},
+                                "sentence_zh": {"type": "string"},
+                                "confidence": {"type": "number"},
+                            },
+                            "required": [
+                                "word",
+                                "ipa",
+                                "meaning_en",
+                                "meaning_zh",
+                                "roots",
+                                "memory_connections",
+                                "nuance",
+                                "sentence_en",
+                                "sentence_zh",
+                                "confidence",
+                            ],
+                        },
+                    }
+                },
+                "required": ["words"],
+            },
+            "strict": True,
+        }
+
+        try:
+            response = client.responses.create(
+                model=model,
+                input=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": (
+                                    "Extract only the highlighted, circled, or underlined English words "
+                                    "from this magazine photo. Handle one word at a time. For each word, "
+                                    "return IPA, meaning in English, meaning in Chinese, roots or meaningful "
+                                    "parts with related common words, memory connections, usage nuance, "
+                                    "the full source sentence in English, and the sentence meaning in Chinese. "
+                                    "Focus on each marked word individually. "
+                                    "If no marked words are visible, return an empty list."
+                                ),
+                            },
+                            {
+                                "type": "input_image",
+                                "image_url": data_url,
+                            },
+                        ],
+                    }
+                ],
+                text={"format": {"type": "json_schema", **schema}},
+                max_output_tokens=1200,
+            )
+        except AuthenticationError as exc:
+            raise HTTPException(status_code=401, detail="Invalid OpenAI API key") from exc
+        except OpenAIError as exc:
+            raise HTTPException(status_code=502, detail=f"OpenAI request failed: {exc}") from exc
+
+        try:
+            payload = json.loads(response.output_text)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=502, detail="OpenAI returned invalid JSON") from exc
+
+        words_payload = payload.get("words", []) if isinstance(payload, dict) else []
+        cleaned_words = []
+        for item in words_payload:
+            if not isinstance(item, dict):
+                continue
+            word = str(item.get("word") or "").strip()
+            if not word:
+                continue
+            cleaned_words.append(
+                {
+                    "word": word,
+                    "ipa": str(item.get("ipa") or "").strip(),
+                    "meaning_en": str(item.get("meaning_en") or "").strip(),
+                    "meaning_zh": str(item.get("meaning_zh") or "").strip(),
+                    "roots": str(item.get("roots") or "").strip(),
+                    "memory_connections": str(item.get("memory_connections") or "").strip(),
+                    "nuance": str(item.get("nuance") or "").strip(),
+                    "sentence_en": str(item.get("sentence_en") or "").strip(),
+                    "sentence_zh": str(item.get("sentence_zh") or "").strip(),
+                    "confidence": max(0, min(1, float(item.get("confidence") or 0))),
+                }
+            )
+
+        return {"words": cleaned_words}
+
     @app.post("/api/words", response_model=Word)
     def add_word(word_input: WordCreate):
         valid_examples = [item.strip() for item in word_input.examples if item and item.strip()]
-        chosen_date = word_input.date or date.today()
+        meaning = (word_input.meaning or "").strip()
+        sentence = (word_input.sentence or "").strip()
+        if not valid_examples and not meaning and not sentence:
+            raise HTTPException(status_code=400, detail="Please provide meaning, sentence, or examples")
+        chosen_date = word_input.date or date_cls.today()
         with engine.begin() as conn:
             result = conn.execute(
-                sa.insert(words).values(word=word_input.word.strip(), date=chosen_date)
+                sa.insert(words).values(
+                    word=word_input.word.strip(),
+                    meaning=meaning,
+                    sentence=sentence,
+                    date=chosen_date,
+                )
             )
             word_id = result.inserted_primary_key[0]
             if valid_examples:
@@ -215,6 +417,8 @@ def setup_study_module(app, engine, metadata):
         return {
             "id": word_id,
             "word": word_input.word.strip(),
+            "meaning": meaning,
+            "sentence": sentence,
             "date": chosen_date,
             "examples": valid_examples,
             "yes_count": 0,
@@ -222,8 +426,8 @@ def setup_study_module(app, engine, metadata):
         }
 
     @app.get("/api/words", response_model=List[Word])
-    def list_words(start: Optional[date] = None, end: Optional[date] = None):
-        stmt = sa.select(words.c.id, words.c.word, words.c.date)
+    def list_words(start: Optional[date_cls] = None, end: Optional[date_cls] = None):
+        stmt = sa.select(words.c.id, words.c.word, words.c.meaning, words.c.sentence, words.c.date)
         if start is not None:
             stmt = stmt.where(words.c.date >= start)
         if end is not None:
@@ -252,6 +456,8 @@ def setup_study_module(app, engine, metadata):
           {
             "id": row.id,
             "word": row.word,
+            "meaning": row.meaning or "",
+            "sentence": row.sentence or "",
             "date": row.date,
             "examples": examples_by_word_id.get(row.id, []),
             "yes_count": stats_by_word_id.get(row.id, (0, 1))[0],

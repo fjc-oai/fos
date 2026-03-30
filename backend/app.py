@@ -865,6 +865,30 @@ def healthz():
     return {"ok": True, "time": utcnow().isoformat()}
 
 
+@app.get("/api/ai/healthz")
+def ai_healthz():
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set")
+
+    from openai import AuthenticationError, OpenAI, OpenAIError
+
+    client = OpenAI(api_key=api_key)
+    model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
+    try:
+        response = client.responses.create(
+            model=model,
+            input="Reply with exactly: ok",
+            max_output_tokens=16,
+        )
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail="Invalid OpenAI API key") from exc
+    except OpenAIError as exc:
+        raise HTTPException(status_code=502, detail=f"OpenAI request failed: {exc}") from exc
+
+    return {"ok": True, "model": model, "output": response.output_text}
+
+
 dist_dir = pathlib.Path(__file__).parent / "frontend" / "dist"
 
 if dist_dir.exists():

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./LearningApp.css";
 import Review from "./Review";
 import Quiz from "./Quiz";
@@ -6,13 +6,39 @@ import Quiz from "./Quiz";
 const API = import.meta.env.VITE_API_URL || "/api";
 
 const LEARNING_PAGES = [
-  { id: "home", label: "Dashboard" },
   { id: "wordBank", label: "Word Bank" },
   { id: "review", label: "Review" },
   { id: "quiz", label: "Quiz" },
 ];
 
 const QUICK_SESSION_MINUTES = [15, 30, 45, 60];
+
+function AutoResizeTextarea({ value, onChange, ...props }) {
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      {...props}
+      ref={textareaRef}
+      value={value}
+      onChange={(event) => {
+        onChange(event);
+        event.target.style.height = "auto";
+        event.target.style.height = `${event.target.scrollHeight}px`;
+      }}
+    />
+  );
+}
 
 function LearningApp() {
   const [page, setPage] = useState("home");
@@ -24,7 +50,12 @@ function LearningApp() {
   const [sessionWords, setSessionWords] = useState([]);
   const [quickDurMin, setQuickDurMin] = useState(30);
   const [quickDate, setQuickDate] = useState(localYmd());
+  const [scanWords, setScanWords] = useState([]);
+  const [scanError, setScanError] = useState("");
+  const [isScanningImage, setIsScanningImage] = useState(false);
+  const [isSavingScanWords, setIsSavingScanWords] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  const scanInputRef = useRef(null);
 
   // word form
   const [word, setWord] = useState("");
@@ -96,14 +127,9 @@ function LearningApp() {
     setReviewing(false);
   }
 
-  function renderSidebar() {
+  function renderSidebar(extraClassName = "") {
     return (
-      <aside className="learning-sidebar">
-        <div className="learning-brand-block">
-          <h1>3000r</h1>
-          <p>Sessions, review, and quiz in the same shell.</p>
-        </div>
-
+      <aside className={`learning-sidebar ${extraClassName}`.trim()}>
         <nav className="learning-nav">
           {LEARNING_PAGES.map((item) => (
             <button
@@ -112,7 +138,9 @@ function LearningApp() {
               className={`learning-nav__item ${page === item.id ? "learning-nav__item--active" : ""}`}
               onClick={() => setPage(item.id)}
             >
-              {item.label}
+              <span className="learning-nav__copy">
+                <span className="learning-nav__label">{item.label}</span>
+              </span>
             </button>
           ))}
         </nav>
@@ -179,6 +207,99 @@ function LearningApp() {
     }
   }
 
+  async function scanMagazineImage(event) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setIsScanningImage(true);
+    setScanError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+
+      const res = await fetch(`${API}/learning/scan-words`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Failed to scan image.");
+      }
+
+      const data = await res.json();
+      setScanWords(
+        (data.words || []).map((item, index) => ({
+          id: `${Date.now()}-${index}`,
+          selected: true,
+          word: item.word || "",
+          ipa: item.ipa || "",
+          meaningText: [item.meaning_en, item.meaning_zh].filter(Boolean).join("\n"),
+          roots: item.roots || "",
+          memoryText: [item.memory_connections, item.nuance].filter(Boolean).join("\n"),
+          sentenceText: [item.sentence_en, item.sentence_zh].filter(Boolean).join("\n"),
+        })),
+      );
+    } catch (e) {
+      setScanError(e.message || "Failed to scan image.");
+    } finally {
+      setIsScanningImage(false);
+      event.target.value = "";
+    }
+  }
+
+  async function saveScannedWords() {
+    const selectedWords = scanWords.filter((item) => item.selected && item.word.trim());
+    if (selectedWords.length === 0) {
+      skipScannedWords();
+      return;
+    }
+
+    setIsSavingScanWords(true);
+    setScanError("");
+
+    try {
+      for (const item of selectedWords) {
+        const res = await fetch(`${API}/words`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            word: item.word.trim(),
+            meaning: item.meaningText.trim(),
+            sentence: item.sentenceText.trim(),
+            examples: [],
+            date: localYmd(),
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `Failed to save ${item.word}.`);
+        }
+      }
+
+      skipScannedWords();
+    } catch (e) {
+      setScanError(e.message || "Failed to save scanned words.");
+    } finally {
+      setIsSavingScanWords(false);
+    }
+  }
+
+  function skipScannedWords() {
+    setScanWords([]);
+    setScanError("");
+  }
+
+  function updateScanWord(id, patch) {
+    setScanWords((current) =>
+      current.map((wordItem) => (wordItem.id === id ? { ...wordItem, ...patch } : wordItem)),
+    );
+  }
+
   async function submitWord(e) {
     e.preventDefault();
     const examples = examplesText
@@ -194,7 +315,12 @@ function LearningApp() {
       const res = await fetch(`${API}/words`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ word: word.trim(), examples }),
+        body: JSON.stringify({
+          word: word.trim(),
+          meaning: "",
+          sentence: examples[0] || "",
+          examples,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -254,7 +380,7 @@ function LearningApp() {
     return result; // [today, yesterday, ...]
   }
 
-  function aggregateSessionsCurrentWeek() {
+  function aggregateSessionsPast7Days() {
     const totalsByDate = new Map();
     for (const s of sessions) {
       const key = s.date;
@@ -262,13 +388,8 @@ function LearningApp() {
       totalsByDate.set(key, (totalsByDate.get(key) || 0) + dur);
     }
 
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    const monday = addDays(today, mondayOffset);
-
     return Array.from({ length: 7 }, (_, index) => {
-      const date = addDays(monday, index);
+      const date = addDays(new Date(), index - 6);
       const key = localYmd(date);
       return {
         date: key,
@@ -323,8 +444,8 @@ function LearningApp() {
     return (values || []).reduce((acc, v) => acc + (Number(v) || 0), 0);
   }
 
-  const currentWeekSessions = aggregateSessionsCurrentWeek();
-  const maxWeekMinutes = Math.max(60, ...currentWeekSessions.map((day) => day.minutes));
+  const past7DaySessions = aggregateSessionsPast7Days();
+  const maxWeekMinutes = Math.max(60, ...past7DaySessions.map((day) => day.minutes));
 
   function currentRangeFromMode(mode) {
     if (mode === "all") return { start: null, end: null };
@@ -391,64 +512,72 @@ function LearningApp() {
   if (page === "home") {
     return (
       <div className="learning-shell">
-        {renderSidebar()}
+        {renderSidebar("learning-sidebar--desktop-home")}
         <main className="learning-workspace">
-          <section className="learning-hero">
-            <div>
-              <span className="learning-eyebrow">learning</span>
-              <h2>Log magazine reading fast.</h2>
-              <p>Quickly record an English reading session, then add words when you need them.</p>
-            </div>
-          </section>
-
           <section className="learning-panel learning-quick-session-panel">
             <div className="learning-panel-header">
               <div>
                 <h3>Quick add session</h3>
               </div>
-              <button type="button" onClick={startSession}>Live timer</button>
+              <div className="learning-quick-session-actions">
+                <button type="button" onClick={() => scanInputRef.current?.click()} disabled={isScanningImage}>
+                  {isScanningImage ? "Scanning..." : "Scan photo"}
+                </button>
+                <button type="button" onClick={startSession}>Live timer</button>
+              </div>
             </div>
 
+            <input
+              ref={scanInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={scanMagazineImage}
+              style={{ display: "none" }}
+            />
+
             <form onSubmit={quickLogSession} className="learning-quick-session-form">
-              <div className="learning-duration-picks" aria-label="Quick duration">
-                {QUICK_SESSION_MINUTES.map((minutes) => (
-                  <button
-                    key={minutes}
-                    type="button"
-                    className={`learning-duration-pick ${Number(quickDurMin) === minutes ? "learning-duration-pick--active" : ""}`}
-                    onClick={() => setQuickDurMin(minutes)}
-                  >
-                    {minutes}m
+              <div className="learning-quick-session-row">
+                <div className="learning-duration-picks" aria-label="Quick duration">
+                  {QUICK_SESSION_MINUTES.map((minutes) => (
+                    <button
+                      key={minutes}
+                      type="button"
+                      className={`learning-duration-pick ${Number(quickDurMin) === minutes ? "learning-duration-pick--active" : ""}`}
+                      onClick={() => setQuickDurMin(minutes)}
+                    >
+                      {minutes}m
+                    </button>
+                  ))}
+                </div>
+
+                <div className="learning-quick-session-fields">
+                  <label className="learning-quick-session-field">
+                    <span>Minutes</span>
+                    <input
+                      type="number"
+                      value={quickDurMin}
+                      onChange={(e) => setQuickDurMin(e.target.value)}
+                      min={1}
+                      max={1440}
+                      required
+                      placeholder="Minutes"
+                    />
+                  </label>
+
+                  <label className="learning-quick-session-field">
+                    <span>Date</span>
+                    <input
+                      type="date"
+                      value={quickDate}
+                      onChange={(e) => setQuickDate(e.target.value)}
+                    />
+                  </label>
+
+                  <button type="submit" className="learning-log-session-button">
+                    Log
                   </button>
-                ))}
-              </div>
-
-              <div className="learning-quick-session-fields">
-                <label className="learning-quick-session-field">
-                  <span>Minutes</span>
-                  <input
-                    type="number"
-                    value={quickDurMin}
-                    onChange={(e) => setQuickDurMin(e.target.value)}
-                    min={1}
-                    max={1440}
-                    required
-                    placeholder="Minutes"
-                  />
-                </label>
-
-                <label className="learning-quick-session-field">
-                  <span>Date</span>
-                  <input
-                    type="date"
-                    value={quickDate}
-                    onChange={(e) => setQuickDate(e.target.value)}
-                  />
-                </label>
-
-                <button type="submit" className="learning-log-session-button">
-                  Log
-                </button>
+                </div>
               </div>
             </form>
 
@@ -459,8 +588,8 @@ function LearningApp() {
                 <span>Total <strong>{toHoursOneDecimal(totalMinutesAll())}h</strong></span>
               </div>
 
-              <div className="learning-week-bars" aria-label="Current week hours">
-                {currentWeekSessions.map((day) => (
+              <div className="learning-week-bars" aria-label="Past 7 days hours">
+                {past7DaySessions.map((day) => (
                   <div key={day.date} className="learning-week-bar">
                     <div className="learning-week-bar__track">
                       <div
@@ -474,13 +603,98 @@ function LearningApp() {
                 ))}
               </div>
             </div>
+
+            {scanError ? <p className="learning-scan-error">{scanError}</p> : null}
+
           </section>
 
-          <section className="learning-grid">
-            <button type="button" className="learning-action-card" onClick={() => setPage("wordBank")}>Word Bank</button>
-            <button type="button" className="learning-action-card" onClick={() => setPage("review")}>Review</button>
-            <button type="button" className="learning-action-card" onClick={() => setPage("quiz")}>Quiz</button>
-          </section>
+          {scanWords.length > 0 ? (
+            <div className="learning-scan-modal-backdrop" onClick={skipScannedWords}>
+              <div className="learning-scan-modal learning-panel" onClick={(event) => event.stopPropagation()}>
+                <div className="learning-scan-review__header">
+                  <h4>Review scanned words</h4>
+                  <div className="learning-scan-review__actions">
+                    <button type="button" onClick={skipScannedWords} disabled={isSavingScanWords}>
+                      Skip
+                    </button>
+                    <button type="button" onClick={saveScannedWords} disabled={isSavingScanWords}>
+                      {isSavingScanWords ? "Saving..." : "Save selected"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="learning-scan-review__list">
+                  {scanWords.map((item) => (
+                    <div key={item.id} className="learning-scan-card">
+                      <input
+                        type="checkbox"
+                        checked={item.selected}
+                        onChange={(event) => updateScanWord(item.id, { selected: event.target.checked })}
+                        aria-label={`Select ${item.word || "word"}`}
+                      />
+                      <div className="learning-scan-card__body">
+                        <div className="learning-scan-card__top-row">
+                          <input
+                            className="learning-scan-word-input"
+                            type="text"
+                            value={item.word}
+                            onChange={(event) => updateScanWord(item.id, { word: event.target.value })}
+                            placeholder="word"
+                          />
+                          <input
+                            className="learning-scan-ipa-input"
+                            type="text"
+                            value={item.ipa}
+                            onChange={(event) => updateScanWord(item.id, { ipa: event.target.value })}
+                            placeholder="/ipa/"
+                          />
+                        </div>
+
+                        <AutoResizeTextarea
+                          rows={2}
+                          value={item.meaningText}
+                          onChange={(event) => updateScanWord(item.id, { meaningText: event.target.value })}
+                          placeholder={"meaning in English\nmeaning in Chinese"}
+                        />
+
+                        <AutoResizeTextarea
+                          rows={2}
+                          value={item.roots}
+                          onChange={(event) => updateScanWord(item.id, { roots: event.target.value })}
+                          placeholder="roots / parts"
+                        />
+
+                        <AutoResizeTextarea
+                          rows={2}
+                          value={item.memoryText}
+                          onChange={(event) => updateScanWord(item.id, { memoryText: event.target.value })}
+                          placeholder={"memory connections\nnuance"}
+                        />
+
+                        <AutoResizeTextarea
+                          rows={2}
+                          value={item.sentenceText}
+                          onChange={(event) => updateScanWord(item.id, { sentenceText: event.target.value })}
+                          placeholder={"sentence in English\nsentence in Chinese"}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="learning-scan-review__footer learning-scan-review__actions">
+                  <button type="button" onClick={skipScannedWords} disabled={isSavingScanWords}>
+                    Skip
+                  </button>
+                  <button type="button" onClick={saveScannedWords} disabled={isSavingScanWords}>
+                    {isSavingScanWords ? "Saving..." : "Save selected"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {renderSidebar("learning-sidebar--mobile-home")}
 
           <section className="learning-panel">
             <h3>Add word</h3>
@@ -579,11 +793,7 @@ function LearningApp() {
 
   return (
     <div className="learning-shell">
-      <aside className="learning-sidebar">
-        <div className="learning-brand-block">
-          <h1>3000r</h1>
-          <p>Active session mode.</p>
-        </div>
+      <aside className="learning-sidebar learning-sidebar--session">
         {sessionEnded ? (
           <button disabled style={{ width: "100%", padding: "0.75rem", fontSize: 18, marginBottom: "1rem" }}>Session Ended</button>
         ) : reviewing ? (
