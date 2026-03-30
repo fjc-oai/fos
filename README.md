@@ -14,6 +14,7 @@ The goal is not to build a generic productivity product. The goal is to build a 
 - [fos production](https://fos-0vm6.onrender.com/)
 - [Render](https://render.com/)
 - [Neon](https://neon.com/)
+- [UptimeRobot](https://dashboard.uptimerobot.com/monitors/)
 
 ## Install fos
 
