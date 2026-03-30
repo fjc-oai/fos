@@ -13,6 +13,7 @@ from typing import List, Literal, Optional
 import sqlalchemy as sa
 from fastapi import File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
+from starlette.responses import StreamingResponse
 
 
 def setup_study_module(app, engine, metadata):
@@ -156,6 +157,71 @@ def setup_study_module(app, engine, metadata):
 
     class ScanWordsResponse(BaseModel):
         words: List[ScanWord]
+
+    def iter_streamed_word_objects(text: str):
+        words_key_index = text.find('"words"')
+        if words_key_index < 0:
+            return
+
+        array_start = text.find("[", words_key_index)
+        if array_start < 0:
+            return
+
+        index = array_start + 1
+        while index < len(text):
+            while index < len(text) and text[index] in " \n\r\t,":
+                index += 1
+            if index >= len(text) or text[index] == "]":
+                return
+            if text[index] != "{":
+                index += 1
+                continue
+
+            start = index
+            depth = 0
+            in_string = False
+            escaped = False
+            while index < len(text):
+                char = text[index]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif char == "\\":
+                        escaped = True
+                    elif char == '"':
+                        in_string = False
+                else:
+                    if char == '"':
+                        in_string = True
+                    elif char == "{":
+                        depth += 1
+                    elif char == "}":
+                        depth -= 1
+                        if depth == 0:
+                            yield text[start : index + 1]
+                            index += 1
+                            break
+                index += 1
+            else:
+                return
+
+    def normalize_scan_word_payload(item: dict):
+        word = str(item.get("word") or "").strip()
+        if not word:
+            return None
+
+        return {
+            "word": word,
+            "ipa": str(item.get("ipa") or "").strip(),
+            "meaning_en": str(item.get("meaning_en") or "").strip(),
+            "meaning_zh": str(item.get("meaning_zh") or "").strip(),
+            "roots": str(item.get("roots") or "").strip(),
+            "memory_connections": str(item.get("memory_connections") or "").strip(),
+            "nuance": str(item.get("nuance") or "").strip(),
+            "sentence_en": str(item.get("sentence_en") or "").strip(),
+            "sentence_zh": str(item.get("sentence_zh") or "").strip(),
+            "confidence": max(0, min(1, float(item.get("confidence") or 0))),
+        }
 
     def ensure_study_schema():
         inspector = sa.inspect(engine)
@@ -415,25 +481,154 @@ def setup_study_module(app, engine, metadata):
         for item in words_payload:
             if not isinstance(item, dict):
                 continue
-            word = str(item.get("word") or "").strip()
-            if not word:
+            cleaned_word = normalize_scan_word_payload(item)
+            if not cleaned_word:
                 continue
-            cleaned_words.append(
-                {
-                    "word": word,
-                    "ipa": str(item.get("ipa") or "").strip(),
-                    "meaning_en": str(item.get("meaning_en") or "").strip(),
-                    "meaning_zh": str(item.get("meaning_zh") or "").strip(),
-                    "roots": str(item.get("roots") or "").strip(),
-                    "memory_connections": str(item.get("memory_connections") or "").strip(),
-                    "nuance": str(item.get("nuance") or "").strip(),
-                    "sentence_en": str(item.get("sentence_en") or "").strip(),
-                    "sentence_zh": str(item.get("sentence_zh") or "").strip(),
-                    "confidence": max(0, min(1, float(item.get("confidence") or 0))),
-                }
-            )
+            cleaned_words.append(cleaned_word)
 
         return {"words": cleaned_words}
+
+    @app.post("/api/learning/scan-words/stream")
+    async def stream_scan_words_image(image: UploadFile = File(...)):
+        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        if not api_key:
+            raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set")
+
+        content_type = image.content_type or ""
+        if not content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Please upload an image")
+
+        image_bytes = await image.read()
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail="Uploaded image is empty")
+        if len(image_bytes) > 12 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Image must be 12MB or smaller")
+
+        from openai import AuthenticationError, OpenAI, OpenAIError
+
+        client = OpenAI(api_key=api_key)
+        model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
+        data_url = f"data:{content_type};base64,{base64.b64encode(image_bytes).decode('ascii')}"
+
+        schema = {
+            "name": "magazine_words",
+            "schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "words": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "word": {"type": "string"},
+                                "ipa": {"type": "string"},
+                                "meaning_en": {"type": "string"},
+                                "meaning_zh": {"type": "string"},
+                                "roots": {"type": "string"},
+                                "memory_connections": {"type": "string"},
+                                "nuance": {"type": "string"},
+                                "sentence_en": {"type": "string"},
+                                "sentence_zh": {"type": "string"},
+                                "confidence": {"type": "number"},
+                            },
+                            "required": [
+                                "word",
+                                "ipa",
+                                "meaning_en",
+                                "meaning_zh",
+                                "roots",
+                                "memory_connections",
+                                "nuance",
+                                "sentence_en",
+                                "sentence_zh",
+                                "confidence",
+                            ],
+                        },
+                    }
+                },
+                "required": ["words"],
+            },
+            "strict": True,
+        }
+
+        def stream_events():
+            def emit(payload: dict):
+                return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+            yield emit({"type": "start"})
+
+            try:
+                stream = client.responses.create(
+                    model=model,
+                    input=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "input_text",
+                                    "text": (
+                                        "Extract only the highlighted, circled, or underlined English words "
+                                        "from this magazine photo. Handle one word at a time. For each word, "
+                                        "return IPA, meaning in English, meaning in Chinese, roots or meaningful "
+                                        "parts explained through memorable related words, memory connections, usage nuance, "
+                                        "the full source sentence in English, and the sentence meaning in Chinese. "
+                                        "For roots, do not give formal etymology labels by themselves. Instead, break "
+                                        "the word into parts when useful and connect each part to common memorable words "
+                                        "from the same family, like auto -> autograph/automobile and crat -> democrat/bureaucrat. "
+                                        "If roots are not useful, explain spelling or sound connections that help memory. "
+                                        "Focus on each marked word individually. "
+                                        "If no marked words are visible, return an empty list."
+                                    ),
+                                },
+                                {
+                                    "type": "input_image",
+                                    "image_url": data_url,
+                                },
+                            ],
+                        }
+                    ],
+                    text={"format": {"type": "json_schema", **schema}},
+                    max_output_tokens=2000,
+                    stream=True,
+                )
+            except AuthenticationError:
+                yield emit({"type": "error", "detail": "Invalid OpenAI API key"})
+                return
+            except OpenAIError as exc:
+                yield emit({"type": "error", "detail": f"OpenAI request failed: {exc}"})
+                return
+
+            buffer = ""
+            emitted_count = 0
+            try:
+                for event in stream:
+                    if getattr(event, "type", "") == "response.output_text.delta":
+                        buffer += getattr(event, "delta", "") or ""
+                        objects = list(iter_streamed_word_objects(buffer))
+                        while emitted_count < len(objects):
+                            try:
+                                parsed_word = json.loads(objects[emitted_count])
+                            except json.JSONDecodeError:
+                                break
+                            emitted_count += 1
+                            cleaned_word = normalize_scan_word_payload(parsed_word)
+                            if cleaned_word:
+                                yield emit({"type": "word", "word": cleaned_word})
+                    elif getattr(event, "type", "") == "response.completed":
+                        break
+            except OpenAIError as exc:
+                yield emit({"type": "error", "detail": f"OpenAI stream failed: {exc}"})
+                return
+
+            yield emit({"type": "done"})
+
+        return StreamingResponse(
+            stream_events(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @app.post("/api/words", response_model=Word)
     def add_word(word_input: WordCreate):

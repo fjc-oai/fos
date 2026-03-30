@@ -50,6 +50,7 @@ function LearningApp() {
   const [sessionWords, setSessionWords] = useState([]);
   const [quickDurMin, setQuickDurMin] = useState(30);
   const [quickDate, setQuickDate] = useState(localYmd());
+  const [isScanModalOpen, setIsScanModalOpen] = useState(false);
   const [scanWords, setScanWords] = useState([]);
   const [scanError, setScanError] = useState("");
   const [isScanningImage, setIsScanningImage] = useState(false);
@@ -222,13 +223,15 @@ function LearningApp() {
     }
 
     setIsScanningImage(true);
+    setIsScanModalOpen(true);
+    setScanWords([]);
     setScanError("");
 
     try {
       const formData = new FormData();
       formData.append("image", file);
 
-      const res = await fetch(`${API}/learning/scan-words`, {
+      const res = await fetch(`${API}/learning/scan-words/stream`, {
         method: "POST",
         body: formData,
       });
@@ -238,19 +241,53 @@ function LearningApp() {
         throw new Error(err.detail || "Failed to scan image.");
       }
 
-      const data = await res.json();
-      setScanWords(
-        (data.words || []).map((item, index) => ({
-          id: `${Date.now()}-${index}`,
-          selected: true,
-          word: item.word || "",
-          ipa: item.ipa || "",
-          meaningText: [item.meaning_en, item.meaning_zh].filter(Boolean).join("\n"),
-          roots: item.roots || "",
-          memoryText: [item.memory_connections, item.nuance].filter(Boolean).join("\n"),
-          sentenceText: [item.sentence_en, item.sentence_zh].filter(Boolean).join("\n"),
-        })),
-      );
+      if (!res.body) {
+        throw new Error("Streaming response is not available.");
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let wordIndex = 0;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() || "";
+
+        for (const chunk of chunks) {
+          const dataLine = chunk
+            .split("\n")
+            .find((line) => line.startsWith("data: "));
+          if (!dataLine) {
+            continue;
+          }
+
+          const payload = JSON.parse(dataLine.slice(6));
+          if (payload.type === "word" && payload.word) {
+            const item = payload.word;
+            const nextWord = {
+              id: `${Date.now()}-${wordIndex}`,
+              selected: true,
+              word: item.word || "",
+              ipa: item.ipa || "",
+              meaningText: [item.meaning_en, item.meaning_zh].filter(Boolean).join("\n"),
+              roots: item.roots || "",
+              memoryText: [item.memory_connections, item.nuance].filter(Boolean).join("\n"),
+              sentenceText: [item.sentence_en, item.sentence_zh].filter(Boolean).join("\n"),
+            };
+            wordIndex += 1;
+            setScanWords((current) => [...current, nextWord]);
+          } else if (payload.type === "error") {
+            throw new Error(payload.detail || "Failed to scan image.");
+          }
+        }
+      }
     } catch (e) {
       setScanError(e.message || "Failed to scan image.");
     } finally {
@@ -328,6 +365,7 @@ function LearningApp() {
   }
 
   function skipScannedWords() {
+    setIsScanModalOpen(false);
     setScanWords([]);
     setScanError("");
   }
@@ -700,7 +738,7 @@ function LearningApp() {
 
           </section>
 
-          {scanWords.length > 0 ? (
+          {isScanModalOpen ? (
             <div className="learning-scan-modal-backdrop" onClick={skipScannedWords}>
               <div className="learning-scan-modal learning-panel" onClick={(event) => event.stopPropagation()}>
                 <div className="learning-scan-review__header">
@@ -716,6 +754,12 @@ function LearningApp() {
                 </div>
 
                 <div className="learning-scan-review__list">
+                  {scanWords.length === 0 && isScanningImage ? (
+                    <p className="learning-scan-empty">Scanning...</p>
+                  ) : null}
+                  {scanWords.length === 0 && !isScanningImage && !scanError ? (
+                    <p className="learning-scan-empty">No marked words found.</p>
+                  ) : null}
                   {scanWords.map((item) => (
                     <div key={item.id} className="learning-scan-card">
                       <input
