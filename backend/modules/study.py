@@ -352,8 +352,12 @@ def setup_study_module(app, engine, metadata):
                                     "Extract only the highlighted, circled, or underlined English words "
                                     "from this magazine photo. Handle one word at a time. For each word, "
                                     "return IPA, meaning in English, meaning in Chinese, roots or meaningful "
-                                    "parts with related common words, memory connections, usage nuance, "
+                                    "parts explained through memorable related words, memory connections, usage nuance, "
                                     "the full source sentence in English, and the sentence meaning in Chinese. "
+                                    "For roots, do not give formal etymology labels by themselves. Instead, break "
+                                    "the word into parts when useful and connect each part to common memorable words "
+                                    "from the same family, like auto -> autograph/automobile and crat -> democrat/bureaucrat. "
+                                    "If roots are not useful, explain spelling or sound connections that help memory. "
                                     "Focus on each marked word individually. "
                                     "If no marked words are visible, return an empty list."
                                 ),
