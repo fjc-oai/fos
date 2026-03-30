@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
 import TodoApp from "./features/todo/TodoApp.jsx";
 import LearningApp from "./features/learning/LearningApp.jsx";
@@ -57,14 +57,9 @@ function App() {
     };
   }, []);
 
-  const currentSection = useMemo(
-    () => SECTIONS.find((item) => item.id === section) ?? SECTIONS[0],
-    [section],
-  );
-
   useEffect(() => {
-    document.title = `${currentSection.label} · fos`;
-  }, [currentSection]);
+    document.title = "fos";
+  }, []);
 
   return (
     <div className={`fos-frame ${isMobile ? "fos-frame--mobile" : ""}`}>
