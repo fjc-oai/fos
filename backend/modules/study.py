@@ -4,6 +4,9 @@ import os
 import pathlib
 import random
 import re
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import date as date_cls
 from typing import List, Literal, Optional
 
@@ -102,6 +105,17 @@ def setup_study_module(app, engine, metadata):
 
     class WordReviewUpdate(BaseModel):
         outcome: Literal["yes", "no"]
+
+    class WordLookupRequest(BaseModel):
+        words: List[str] = Field(default_factory=list)
+
+    class WordLookupResponse(BaseModel):
+        existing_words: List[str]
+
+    class WordPronunciationResponse(BaseModel):
+        word: str
+        audio_url: str = ""
+        source: str = ""
 
     class WordStats(BaseModel):
         word_id: int
@@ -453,6 +467,68 @@ def setup_study_module(app, engine, metadata):
             "yes_count": 0,
             "no_count": 1,
         }
+
+    @app.post("/api/words/lookup", response_model=WordLookupResponse)
+    def lookup_words(payload: WordLookupRequest):
+        normalized_words = sorted({
+            item.strip().lower()
+            for item in payload.words
+            if isinstance(item, str) and item.strip()
+        })
+        if not normalized_words:
+            return {"existing_words": []}
+
+        with engine.begin() as conn:
+            rows = conn.execute(
+                sa.select(sa.func.lower(words.c.word)).where(
+                    sa.func.lower(words.c.word).in_(normalized_words)
+                )
+            ).all()
+
+        return {"existing_words": sorted({row[0] for row in rows if row[0]})}
+
+    @app.get("/api/words/pronunciation/{word}", response_model=WordPronunciationResponse)
+    def get_word_pronunciation(word: str):
+        normalized_word = word.strip()
+        if not normalized_word:
+            raise HTTPException(status_code=400, detail="Word is required")
+
+        lookup_url = (
+            "https://api.dictionaryapi.dev/api/v2/entries/en/"
+            + urllib.parse.quote(normalized_word)
+        )
+
+        request = urllib.request.Request(
+            lookup_url,
+            headers={"User-Agent": "fos/1.0"},
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=8) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return {"word": normalized_word, "audio_url": "", "source": "dictionaryapi.dev"}
+            raise HTTPException(status_code=502, detail="Pronunciation lookup failed") from exc
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=502, detail="Pronunciation lookup failed") from exc
+
+        if not isinstance(payload, list):
+            return {"word": normalized_word, "audio_url": "", "source": "dictionaryapi.dev"}
+
+        for entry in payload:
+            for phonetic in entry.get("phonetics", []) if isinstance(entry, dict) else []:
+                audio_url = str(phonetic.get("audio") or "").strip()
+                if audio_url.startswith("//"):
+                    audio_url = "https:" + audio_url
+                if audio_url:
+                    return {
+                        "word": normalized_word,
+                        "audio_url": audio_url,
+                        "source": "dictionaryapi.dev",
+                    }
+
+        return {"word": normalized_word, "audio_url": "", "source": "dictionaryapi.dev"}
 
     @app.get("/api/words", response_model=List[Word])
     def list_words(start: Optional[date_cls] = None, end: Optional[date_cls] = None):

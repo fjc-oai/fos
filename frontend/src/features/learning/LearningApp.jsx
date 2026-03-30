@@ -32,7 +32,7 @@ function AutoResizeTextarea({ value, onChange, ...props }) {
       ref={textareaRef}
       value={value}
       onChange={(event) => {
-        onChange(event);
+        onChange?.(event);
         event.target.style.height = "auto";
         event.target.style.height = `${event.target.scrollHeight}px`;
       }}
@@ -56,6 +56,7 @@ function LearningApp() {
   const [isSavingScanWords, setIsSavingScanWords] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const scanInputRef = useRef(null);
+  const pronunciationAudioRef = useRef(null);
 
   // word form
   const [word, setWord] = useState("");
@@ -86,6 +87,13 @@ function LearningApp() {
 
   useEffect(() => {
     refreshSessions();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      pronunciationAudioRef.current?.pause();
+      window.speechSynthesis?.cancel();
+    };
   }, []);
 
   // ticking clock while session is running
@@ -251,6 +259,31 @@ function LearningApp() {
     }
   }
 
+  async function lookupExistingWords(wordsToCheck) {
+    const uniqueWords = Array.from(new Set(
+      wordsToCheck
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean),
+    ));
+    if (uniqueWords.length === 0) {
+      return new Set();
+    }
+
+    const res = await fetch(`${API}/words/lookup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ words: uniqueWords }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to check existing words.");
+    }
+
+    const data = await res.json();
+    return new Set((data.existing_words || []).map((item) => item.toLowerCase()));
+  }
+
   async function saveScannedWords() {
     const selectedWords = scanWords.filter((item) => item.selected && item.word.trim());
     if (selectedWords.length === 0) {
@@ -262,7 +295,12 @@ function LearningApp() {
     setScanError("");
 
     try {
-      for (const item of selectedWords) {
+      const existingWords = await lookupExistingWords(selectedWords.map((item) => item.word));
+      const newWords = selectedWords.filter(
+        (item) => !existingWords.has(item.word.trim().toLowerCase()),
+      );
+
+      for (const item of newWords) {
         const res = await fetch(`${API}/words`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -300,6 +338,54 @@ function LearningApp() {
     );
   }
 
+  function speakWord(text) {
+    const spokenText = (text || "").trim();
+    if (!spokenText || !window.speechSynthesis) {
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(spokenText);
+    utterance.lang = "en-US";
+    utterance.rate = 0.9;
+
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find((voice) => voice.lang?.toLowerCase().startsWith("en-us"))
+      || voices.find((voice) => voice.lang?.toLowerCase().startsWith("en"));
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+    }
+
+    window.speechSynthesis.speak(utterance);
+  }
+
+  async function playWordPronunciation(wordText) {
+    const normalizedWord = (wordText || "").trim();
+    if (!normalizedWord) {
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `${API}/words/pronunciation/${encodeURIComponent(normalizedWord)}`,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.audio_url) {
+          pronunciationAudioRef.current?.pause();
+          const audio = new Audio(data.audio_url);
+          pronunciationAudioRef.current = audio;
+          await audio.play();
+          return;
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    speakWord(normalizedWord);
+  }
+
   async function submitWord(e) {
     e.preventDefault();
     const examples = examplesText
@@ -312,6 +398,12 @@ function LearningApp() {
     }
     setSubmittingWord(true);
     try {
+      const existingWords = await lookupExistingWords([word]);
+      if (existingWords.has(word.trim().toLowerCase())) {
+        alert("This word already exists in Word Bank.");
+        return;
+      }
+
       const res = await fetch(`${API}/words`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -638,43 +730,43 @@ function LearningApp() {
                             className="learning-scan-word-input"
                             type="text"
                             value={item.word}
-                            onChange={(event) => updateScanWord(item.id, { word: event.target.value })}
+                            readOnly
                             placeholder="word"
                           />
-                          <input
-                            className="learning-scan-ipa-input"
-                            type="text"
-                            value={item.ipa}
-                            onChange={(event) => updateScanWord(item.id, { ipa: event.target.value })}
-                            placeholder="/ipa/"
-                          />
+                          <button
+                            type="button"
+                            className="learning-scan-ipa-button"
+                            onClick={() => playWordPronunciation(item.word)}
+                          >
+                            {item.ipa || "Play"}
+                          </button>
                         </div>
 
                         <AutoResizeTextarea
                           rows={2}
                           value={item.meaningText}
-                          onChange={(event) => updateScanWord(item.id, { meaningText: event.target.value })}
+                          readOnly
                           placeholder={"meaning in English\nmeaning in Chinese"}
                         />
 
                         <AutoResizeTextarea
                           rows={2}
                           value={item.roots}
-                          onChange={(event) => updateScanWord(item.id, { roots: event.target.value })}
+                          readOnly
                           placeholder="roots / parts"
                         />
 
                         <AutoResizeTextarea
                           rows={2}
                           value={item.memoryText}
-                          onChange={(event) => updateScanWord(item.id, { memoryText: event.target.value })}
+                          readOnly
                           placeholder={"memory connections\nnuance"}
                         />
 
                         <AutoResizeTextarea
                           rows={2}
                           value={item.sentenceText}
-                          onChange={(event) => updateScanWord(item.id, { sentenceText: event.target.value })}
+                          readOnly
                           placeholder={"sentence in English\nsentence in Chinese"}
                         />
                       </div>

@@ -440,8 +440,15 @@
   color: var(--ink-strong);
 }
 
-.learning-scan-ipa-input {
+.learning-scan-ipa-button {
+  display: flex;
+  align-items: center;
+  justify-content: start;
+  min-height: 3.2rem;
+  border-radius: 1rem !important;
   color: var(--ink-soft);
+  text-align: left;
+  line-height: 1.2;
 }
 
 .learning-scan-field {
@@ -461,6 +468,12 @@
   overflow: hidden;
   resize: vertical;
   line-height: 1.45;
+}
+
+.learning-scan-card__body input[readonly],
+.learning-scan-card__body textarea[readonly] {
+  cursor: default;
+  background: rgba(255, 255, 255, 0.58);
 }
 
 .learning-form {
