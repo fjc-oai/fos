@@ -223,6 +223,30 @@ def setup_study_module(app, engine, metadata):
             "confidence": max(0, min(1, float(item.get("confidence") or 0))),
         }
 
+    def build_scan_words_prompt():
+        return (
+            "Extract only the highlighted, circled, or underlined English words "
+            "from this magazine photo. Handle one word at a time. For each word, "
+            "return IPA, meaning in English, meaning in Chinese, roots or meaningful "
+            "parts explained through memorable related words, memory connections, usage nuance, "
+            "the full source sentence in English, and the sentence meaning in Chinese. "
+            "Return the dictionary headword for `word`, not the surface form from the sentence, "
+            "when the marked text is an inflected form such as a plural, tense change, or participle. "
+            "For example, use read instead of reading when reading is the verb form, and use bury "
+            "instead of buried. Use that normalized dictionary form for `word`, IPA, meanings, roots, "
+            "memory connections, and nuance. Keep `sentence_en` exactly as it appears in the image, "
+            "including the original surface form in the sentence. If a marked word is already a normal "
+            "dictionary headword in its own right, keep it unchanged. If the photo or OCR contains an "
+            "obvious spelling error but the intended English word is clear from the text, correct it to "
+            "the intended dictionary headword. "
+            "For roots, do not give formal etymology labels by themselves. Instead, break "
+            "the word into parts when useful and connect each part to common memorable words "
+            "from the same family, like auto -> autograph/automobile and crat -> democrat/bureaucrat. "
+            "If roots are not useful, explain spelling or sound connections that help memory. "
+            "Focus on each marked word individually. "
+            "If no marked words are visible, return an empty list."
+        )
+
     def ensure_study_schema():
         inspector = sa.inspect(engine)
         if "words" not in inspector.get_table_names():
@@ -414,19 +438,7 @@ def setup_study_module(app, engine, metadata):
                         "content": [
                             {
                                 "type": "input_text",
-                                "text": (
-                                    "Extract only the highlighted, circled, or underlined English words "
-                                    "from this magazine photo. Handle one word at a time. For each word, "
-                                    "return IPA, meaning in English, meaning in Chinese, roots or meaningful "
-                                    "parts explained through memorable related words, memory connections, usage nuance, "
-                                    "the full source sentence in English, and the sentence meaning in Chinese. "
-                                    "For roots, do not give formal etymology labels by themselves. Instead, break "
-                                    "the word into parts when useful and connect each part to common memorable words "
-                                    "from the same family, like auto -> autograph/automobile and crat -> democrat/bureaucrat. "
-                                    "If roots are not useful, explain spelling or sound connections that help memory. "
-                                    "Focus on each marked word individually. "
-                                    "If no marked words are visible, return an empty list."
-                                ),
+                                "text": build_scan_words_prompt(),
                             },
                             {
                                 "type": "input_image",
@@ -590,19 +602,7 @@ def setup_study_module(app, engine, metadata):
                             "content": [
                                 {
                                     "type": "input_text",
-                                    "text": (
-                                        "Extract only the highlighted, circled, or underlined English words "
-                                        "from this magazine photo. Handle one word at a time. For each word, "
-                                        "return IPA, meaning in English, meaning in Chinese, roots or meaningful "
-                                        "parts explained through memorable related words, memory connections, usage nuance, "
-                                        "the full source sentence in English, and the sentence meaning in Chinese. "
-                                        "For roots, do not give formal etymology labels by themselves. Instead, break "
-                                        "the word into parts when useful and connect each part to common memorable words "
-                                        "from the same family, like auto -> autograph/automobile and crat -> democrat/bureaucrat. "
-                                        "If roots are not useful, explain spelling or sound connections that help memory. "
-                                        "Focus on each marked word individually. "
-                                        "If no marked words are visible, return an empty list."
-                                    ),
+                                    "text": build_scan_words_prompt(),
                                 },
                                 {
                                     "type": "input_image",
