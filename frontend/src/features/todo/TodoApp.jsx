@@ -45,6 +45,7 @@ function TodoApp({ isMobile = false }) {
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isNativeCaptureOpen, setIsNativeCaptureOpen] = useState(false);
+  const [showBacklogInAllTasks, setShowBacklogInAllTasks] = useState(false);
   const todayKey = getLocalDateKey(new Date());
 
   useEffect(() => {
@@ -364,6 +365,9 @@ function TodoApp({ isMobile = false }) {
     { id: "deadline", title: "Deadline", tasks: lifeTasks.filter((task) => task.taskType === "deadline") },
     { id: "backlog", title: "Backlog", tasks: lifeTasks.filter((task) => task.taskType === "backlog") },
   ];
+  const allBacklogTaskCount = backlogTasks.length;
+  const allWorkSections = getAllTaskSections(workSections, showBacklogInAllTasks);
+  const allLifeSections = getAllTaskSections(lifeSections, showBacklogInAllTasks);
   const todayCount =
     todayWorkTasks.length +
     todayLifeTasks.length +
@@ -576,13 +580,18 @@ function TodoApp({ isMobile = false }) {
             </>
           ) : primaryTab === "all" ? (
             <>
+              <BacklogVisibilityToggle
+                backlogCount={allBacklogTaskCount}
+                onToggle={() => setShowBacklogInAllTasks((current) => !current)}
+                showBacklog={showBacklogInAllTasks}
+              />
               <AreaSectionPanel
                 emptyState="No open work tasks."
                 onSelect={setSelectedTaskId}
                 onSetStatus={handleSetTaskStatus}
                 onToggleToday={handleToggleToday}
                 projectById={projectById}
-                sections={workSections}
+                sections={allWorkSections}
                 selectedTaskId={selectedTaskId}
                 title="Work"
                 todayKey={todayKey}
@@ -594,7 +603,7 @@ function TodoApp({ isMobile = false }) {
                 onSetStatus={handleSetTaskStatus}
                 onToggleToday={handleToggleToday}
                 projectById={projectById}
-                sections={lifeSections}
+                sections={allLifeSections}
                 selectedTaskId={selectedTaskId}
                 title="Life"
                 todayKey={todayKey}
@@ -1039,13 +1048,18 @@ function TodoApp({ isMobile = false }) {
           </div>
         ) : primaryTab === "all" ? (
           <div className="today-stack">
+            <BacklogVisibilityToggle
+              backlogCount={allBacklogTaskCount}
+              onToggle={() => setShowBacklogInAllTasks((current) => !current)}
+              showBacklog={showBacklogInAllTasks}
+            />
             <AreaSectionPanel
               emptyState="No open work tasks."
               onSelect={setSelectedTaskId}
               onSetStatus={handleSetTaskStatus}
               onToggleToday={handleToggleToday}
               projectById={projectById}
-              sections={workSections}
+              sections={allWorkSections}
               selectedTaskId={selectedTaskId}
               title="Work"
               todayKey={todayKey}
@@ -1057,7 +1071,7 @@ function TodoApp({ isMobile = false }) {
               onSetStatus={handleSetTaskStatus}
               onToggleToday={handleToggleToday}
               projectById={projectById}
-              sections={lifeSections}
+              sections={allLifeSections}
               selectedTaskId={selectedTaskId}
               title="Life"
               todayKey={todayKey}
@@ -1241,6 +1255,23 @@ function AreaSectionPanel({
         </div>
       )}
     </section>
+  );
+}
+
+function BacklogVisibilityToggle({ backlogCount, showBacklog, onToggle }) {
+  if (backlogCount < 1) {
+    return null;
+  }
+
+  return (
+    <div className="list-toolbar">
+      <button className={`mini-button ${showBacklog ? "mini-button--active" : ""}`} onClick={onToggle} type="button">
+        {showBacklog ? "Hide backlog" : "Show backlog"}
+      </button>
+      <span className="panel__meta">
+        {backlogCount} backlog {backlogCount === 1 ? "task" : "tasks"} {showBacklog ? "shown" : "hidden"}
+      </span>
+    </div>
   );
 }
 
@@ -1825,6 +1856,14 @@ function getTypeTasks(typeTab, mainTasks, blockedTasks, deadlineTasks, backlogTa
     default:
       return mainTasks;
   }
+}
+
+function getAllTaskSections(sections, showBacklog) {
+  if (showBacklog) {
+    return sections;
+  }
+
+  return sections.filter((section) => section.id !== "backlog");
 }
 
 function formatTaskType(taskType) {
