@@ -496,6 +496,88 @@
   background: rgba(255, 255, 255, 0.58);
 }
 
+.learning-prompt-lab {
+  display: grid;
+  gap: 1rem;
+}
+
+.learning-prompt-lab__intro {
+  margin: -0.25rem 0 0;
+  max-width: 68ch;
+}
+
+.learning-prompt-lab__intro code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+.learning-prompt-lab__form,
+.learning-prompt-lab__runs {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.learning-prompt-lab__field-grid {
+  display: grid;
+  grid-template-columns: 14rem minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.learning-prompt-lab__field-grid .learning-quick-session-field textarea {
+  min-height: 3.5rem;
+}
+
+.learning-prompt-lab__actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.learning-prompt-lab__runs-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.learning-prompt-lab__runs-header h3 {
+  margin: 0;
+}
+
+.learning-prompt-lab__runs-header p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  text-align: right;
+}
+
+.learning-prompt-run {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.95rem;
+  border: 1px solid rgba(71, 61, 53, 0.08);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.learning-prompt-run__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.learning-prompt-run__header strong {
+  display: block;
+  color: var(--ink-strong);
+}
+
+.learning-prompt-run__header span {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
 .learning-form {
   display: grid;
   gap: 0.75rem;
@@ -565,6 +647,10 @@
   }
 
   .learning-quick-session-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .learning-prompt-lab__field-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -731,5 +817,15 @@
 
   .learning-scan-card__top-row {
     grid-template-columns: 1fr;
+  }
+
+  .learning-prompt-lab__runs-header,
+  .learning-prompt-run__header {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .learning-prompt-lab__runs-header p {
+    text-align: left;
   }
 }
