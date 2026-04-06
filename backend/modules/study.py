@@ -148,6 +148,8 @@ def setup_study_module(app, engine, metadata):
         ipa: str = ""
         meaning_en: str = ""
         meaning_zh: str = ""
+        common_meaning_en: str = ""
+        common_meaning_zh: str = ""
         roots: str = ""
         memory_connections: str = ""
         nuance: str = ""
@@ -157,6 +159,19 @@ def setup_study_module(app, engine, metadata):
 
     class ScanWordsResponse(BaseModel):
         words: List[ScanWord]
+
+    class WordPromptLabRequest(BaseModel):
+        word: str = Field(min_length=1)
+        sentence: str = Field(min_length=1)
+        prompt: str = ""
+
+    class WordPromptLabResponse(BaseModel):
+        word: str
+        sentence: str
+        prompt: str
+        rendered_prompt: str
+        output: str
+        model: str
 
     def iter_streamed_word_objects(text: str):
         words_key_index = text.find('"words"')
@@ -215,6 +230,8 @@ def setup_study_module(app, engine, metadata):
             "ipa": str(item.get("ipa") or "").strip(),
             "meaning_en": str(item.get("meaning_en") or "").strip(),
             "meaning_zh": str(item.get("meaning_zh") or "").strip(),
+            "common_meaning_en": str(item.get("common_meaning_en") or "").strip(),
+            "common_meaning_zh": str(item.get("common_meaning_zh") or "").strip(),
             "roots": str(item.get("roots") or "").strip(),
             "memory_connections": str(item.get("memory_connections") or "").strip(),
             "nuance": str(item.get("nuance") or "").strip(),
@@ -227,7 +244,9 @@ def setup_study_module(app, engine, metadata):
         return (
             "Extract only the highlighted, circled, or underlined English words "
             "from this magazine photo. Handle one word at a time. For each word, "
-            "return IPA, meaning in English, meaning in Chinese, roots or meaningful "
+            "return IPA, the meaning used in this sentence in English, the meaning used in this sentence in Chinese, "
+            "the common everyday meaning in English when it differs, the common everyday meaning in Chinese when it differs, "
+            "roots or meaningful "
             "parts explained through memorable related words, memory connections, usage nuance, "
             "the full source sentence in English, and the sentence meaning in Chinese. "
             "Return the dictionary headword for `word`, not the surface form from the sentence, "
@@ -239,13 +258,70 @@ def setup_study_module(app, engine, metadata):
             "dictionary headword in its own right, keep it unchanged. If the photo or OCR contains an "
             "obvious spelling error but the intended English word is clear from the text, correct it to "
             "the intended dictionary headword. "
+            "For `meaning_en` and `meaning_zh`, explain the exact sense used in the source sentence even if it is literary, "
+            "technical, or rare. If that sentence-level sense differs from the ordinary everyday meaning, fill "
+            "`common_meaning_en` and `common_meaning_zh` with the common meaning. If the sentence already uses the common "
+            "meaning, leave the common meaning fields empty. "
             "For roots, do not give formal etymology labels by themselves. Instead, break "
-            "the word into parts when useful and connect each part to common memorable words "
-            "from the same family, like auto -> autograph/automobile and crat -> democrat/bureaucrat. "
+            "the word into parts when useful and teach each part through a small word-family map. "
+            "For each useful part, include 2 or 3 familiar family words, explain the shared idea, and then "
+            "connect that shared idea back to the target word. Do not stop at glosses like auto = self or "
+            "crat = ruler. Show why those parts matter through nearby words a learner may already know. "
+            "For example, auto should be explained through common words like automobile and autograph to show "
+            "the shared idea of self or own, and crat should be explained through words like democrat and "
+            "bureaucrat to show the shared idea of rule, government, or power. For autocrat-like words, a good "
+            "explanation teaches each part separately; a weak explanation only says self-ruler. Prefer the "
+            "family-based explanation over a loose slogan or a generic image. "
             "If roots are not useful, explain spelling or sound connections that help memory. "
             "Focus on each marked word individually. "
             "If no marked words are visible, return an empty list."
         )
+
+    def build_word_prompt_lab_default_prompt():
+        return (
+            "You are helping an English learner learn one word inside one sentence.\n"
+            "Return concise Markdown with these short sections:\n"
+            "1. Meaning used here: explain the exact meaning of the word in this sentence in plain English and Chinese.\n"
+            "2. Common meaning: if the sentence uses a specialized, literary, technical, or rare sense, also give the most common everyday meaning in English and Chinese. If the sentence already uses the common meaning, say that clearly.\n"
+            "3. Nuance: briefly explain why this word fits here and, if useful, how it differs from a close alternative.\n"
+            "4. Memory hook: give 2 strong memory hooks. Prefer explanation-based hooks over decorative ones.\n"
+            "For the first hook, if the word breaks into useful parts, use a Word-family map with one mini-block per useful part.\n"
+            "Each mini-block must contain: part, familiar family words, shared idea, and link to target word.\n"
+            "Example structure:\n"
+            "- part: auto\n"
+            "  family words: automobile, autograph\n"
+            "  shared idea: self / one's own\n"
+            "  link to target: in autocrat, the ruler keeps power to self\n"
+            "- part: crat\n"
+            "  family words: democrat, bureaucrat\n"
+            "  shared idea: rule / government / power\n"
+            "  link to target: in autocrat, rule is concentrated in one person\n"
+            "A bad answer is: auto = self, crat = ruler. A good answer teaches through the family words.\n"
+            "For the second hook, add an image-based or situation-based hook only if it adds something beyond the word-family explanation.\n"
+            "5. Quick recall: end with one short self-test question.\n"
+            "Keep the tone concrete and learner-friendly."
+        )
+
+    def render_word_prompt_lab_prompt(prompt: str, word: str, sentence: str) -> str:
+        prompt_template = (prompt or "").strip() or build_word_prompt_lab_default_prompt()
+        has_word_placeholder = "{word}" in prompt_template
+        has_sentence_placeholder = "{sentence}" in prompt_template
+
+        rendered = prompt_template.replace("{word}", word.strip()).replace(
+            "{sentence}",
+            sentence.strip(),
+        )
+
+        prompt_context = []
+        if not has_word_placeholder:
+            prompt_context.append(f"Target word: {word.strip()}")
+        if not has_sentence_placeholder:
+            prompt_context.append(f"Sentence: {sentence.strip()}")
+
+        if prompt_context:
+            rendered = f"{rendered}\n\n" + "\n".join(prompt_context)
+
+        return rendered
 
     def ensure_study_schema():
         inspector = sa.inspect(engine)
@@ -402,6 +478,8 @@ def setup_study_module(app, engine, metadata):
                                 "ipa": {"type": "string"},
                                 "meaning_en": {"type": "string"},
                                 "meaning_zh": {"type": "string"},
+                                "common_meaning_en": {"type": "string"},
+                                "common_meaning_zh": {"type": "string"},
                                 "roots": {"type": "string"},
                                 "memory_connections": {"type": "string"},
                                 "nuance": {"type": "string"},
@@ -414,6 +492,8 @@ def setup_study_module(app, engine, metadata):
                                 "ipa",
                                 "meaning_en",
                                 "meaning_zh",
+                                "common_meaning_en",
+                                "common_meaning_zh",
                                 "roots",
                                 "memory_connections",
                                 "nuance",
@@ -560,6 +640,8 @@ def setup_study_module(app, engine, metadata):
                                 "ipa": {"type": "string"},
                                 "meaning_en": {"type": "string"},
                                 "meaning_zh": {"type": "string"},
+                                "common_meaning_en": {"type": "string"},
+                                "common_meaning_zh": {"type": "string"},
                                 "roots": {"type": "string"},
                                 "memory_connections": {"type": "string"},
                                 "nuance": {"type": "string"},
@@ -572,6 +654,8 @@ def setup_study_module(app, engine, metadata):
                                 "ipa",
                                 "meaning_en",
                                 "meaning_zh",
+                                "common_meaning_en",
+                                "common_meaning_zh",
                                 "roots",
                                 "memory_connections",
                                 "nuance",
@@ -651,6 +735,59 @@ def setup_study_module(app, engine, metadata):
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    @app.post("/api/learning/prompt-lab", response_model=WordPromptLabResponse)
+    def run_word_prompt_lab(payload: WordPromptLabRequest):
+        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        if not api_key:
+            raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not set")
+
+        from openai import AuthenticationError, OpenAI, OpenAIError
+
+        client = OpenAI(api_key=api_key)
+        model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
+        rendered_prompt = render_word_prompt_lab_prompt(
+            payload.prompt,
+            payload.word,
+            payload.sentence,
+        )
+
+        try:
+            response = client.responses.create(
+                model=model,
+                input=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": rendered_prompt,
+                            }
+                        ],
+                    }
+                ],
+                max_output_tokens=1600,
+            )
+        except AuthenticationError as exc:
+            raise HTTPException(status_code=401, detail="Invalid OpenAI API key") from exc
+        except OpenAIError as exc:
+            raise HTTPException(status_code=502, detail=f"OpenAI request failed: {exc}") from exc
+
+        output_text = (getattr(response, "output_text", "") or "").strip()
+        if not output_text:
+            raise HTTPException(
+                status_code=502,
+                detail="OpenAI returned an empty response. Please try again.",
+            )
+
+        return {
+            "word": payload.word.strip(),
+            "sentence": payload.sentence.strip(),
+            "prompt": (payload.prompt or "").strip() or build_word_prompt_lab_default_prompt(),
+            "rendered_prompt": rendered_prompt,
+            "output": output_text,
+            "model": model,
+        }
 
     @app.post("/api/words", response_model=Word)
     def add_word(word_input: WordCreate):

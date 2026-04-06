@@ -7,11 +7,59 @@ const API = import.meta.env.VITE_API_URL || "/api";
 
 const LEARNING_PAGES = [
   { id: "wordBank", label: "Word Bank" },
+  { id: "promptLab", label: "Prompt Lab" },
   { id: "review", label: "Review" },
   { id: "quiz", label: "Quiz" },
 ];
 
 const QUICK_SESSION_MINUTES = [15, 30, 45, 60];
+const PROMPT_LAB_STORAGE_KEY = "fos.learning.promptLab.v2";
+const PROMPT_LAB_MAX_RUNS = 8;
+const PROMPT_LAB_DEFAULT_TEMPLATE = `You are helping an English learner learn one word inside one sentence.
+
+Return concise Markdown with these short sections:
+1. Meaning used here: explain the exact meaning of the word in this sentence in plain English and Chinese.
+2. Common meaning: if the sentence uses a specialized, literary, technical, or rare sense, also give the most common everyday meaning in English and Chinese. If the sentence already uses the common meaning, say that clearly.
+3. Nuance: briefly explain why this word fits here and, if useful, how it differs from a close alternative.
+4. Memory hook: give 2 strong memory hooks. Prefer explanation-based hooks over decorative ones.
+For the first hook, if the word breaks into useful parts, use a Word-family map with one mini-block per useful part.
+Each mini-block must contain: part, familiar family words, shared idea, and link to target word.
+Example structure:
+- part: auto
+  family words: automobile, autograph
+  shared idea: self / one's own
+  link to target: in autocrat, the ruler keeps power to self
+- part: crat
+  family words: democrat, bureaucrat
+  shared idea: rule / government / power
+  link to target: in autocrat, rule is concentrated in one person
+A bad answer is: auto = self, crat = ruler. A good answer teaches through the family words.
+For the second hook, add an image-based or situation-based hook only if it adds something beyond the word-family explanation.
+5. Quick recall: end with one short self-test question.
+
+Keep the tone concrete and learner-friendly.
+
+Target word: {word}
+Sentence: {sentence}`;
+const PROMPT_LAB_DEMO_WORD = "autocrat";
+const PROMPT_LAB_DEMO_SENTENCE = "The board chair acted like an autocrat, dismissing every objection and announcing the decision as final.";
+
+function loadPromptLabState() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(PROMPT_LAB_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 function AutoResizeTextarea({ value, onChange, ...props }) {
   const textareaRef = useRef(null);
@@ -81,6 +129,16 @@ function LearningApp() {
   const [wbCustomStart, setWbCustomStart] = useState(""); // YYYY-MM-DD
   const [wbCustomEnd, setWbCustomEnd] = useState(""); // YYYY-MM-DD
   const [hoveredWordId, setHoveredWordId] = useState(null);
+  const [promptLabWord, setPromptLabWord] = useState(() => loadPromptLabState()?.word || "");
+  const [promptLabSentence, setPromptLabSentence] = useState(
+    () => loadPromptLabState()?.sentence || "",
+  );
+  const [promptLabTemplate, setPromptLabTemplate] = useState(
+    () => loadPromptLabState()?.prompt || PROMPT_LAB_DEFAULT_TEMPLATE,
+  );
+  const [promptLabRuns, setPromptLabRuns] = useState(() => loadPromptLabState()?.runs || []);
+  const [promptLabLoading, setPromptLabLoading] = useState(false);
+  const [promptLabError, setPromptLabError] = useState("");
 
   async function refreshSessions() {
     try {
@@ -99,6 +157,26 @@ function LearningApp() {
   useEffect(() => {
     refreshSessions();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        PROMPT_LAB_STORAGE_KEY,
+        JSON.stringify({
+          word: promptLabWord,
+          sentence: promptLabSentence,
+          prompt: promptLabTemplate,
+          runs: promptLabRuns.slice(0, PROMPT_LAB_MAX_RUNS),
+        }),
+      );
+    } catch (e) {
+      console.error(e);
+    }
+  }, [promptLabWord, promptLabSentence, promptLabTemplate, promptLabRuns]);
 
   useEffect(() => {
     return () => {
@@ -281,12 +359,18 @@ function LearningApp() {
           const payload = JSON.parse(dataLine.slice(6));
           if (payload.type === "word" && payload.word) {
             const item = payload.word;
+            const meaningLines = [
+              item.meaning_en ? `In sentence (EN): ${item.meaning_en}` : "",
+              item.meaning_zh ? `In sentence (ZH): ${item.meaning_zh}` : "",
+              item.common_meaning_en ? `Common (EN): ${item.common_meaning_en}` : "",
+              item.common_meaning_zh ? `Common (ZH): ${item.common_meaning_zh}` : "",
+            ].filter(Boolean);
             const nextWord = {
               id: `${Date.now()}-${wordIndex}`,
               selected: true,
               word: normalizeScannedWord(item.word || ""),
               ipa: item.ipa || "",
-              meaningText: [item.meaning_en, item.meaning_zh].filter(Boolean).join("\n"),
+              meaningText: meaningLines.join("\n"),
               roots: item.roots || "",
               memoryText: [item.memory_connections, item.nuance].filter(Boolean).join("\n"),
               sentenceText: [item.sentence_en, item.sentence_zh].filter(Boolean).join("\n"),
@@ -384,6 +468,79 @@ function LearningApp() {
     setIsScanModalOpen(false);
     setScanWords([]);
     setScanError("");
+  }
+
+  function loadPromptLabDemo() {
+    setPromptLabWord(PROMPT_LAB_DEMO_WORD);
+    setPromptLabSentence(PROMPT_LAB_DEMO_SENTENCE);
+    setPromptLabError("");
+  }
+
+  function resetPromptLabTemplate() {
+    setPromptLabTemplate(PROMPT_LAB_DEFAULT_TEMPLATE);
+    setPromptLabError("");
+  }
+
+  function clearPromptLabRuns() {
+    setPromptLabRuns([]);
+    setPromptLabError("");
+  }
+
+  function applyPromptLabRun(run) {
+    if (!run) {
+      return;
+    }
+
+    setPromptLabWord(run.word || "");
+    setPromptLabSentence(run.sentence || "");
+    setPromptLabTemplate(run.prompt || PROMPT_LAB_DEFAULT_TEMPLATE);
+    setPromptLabError("");
+  }
+
+  async function runPromptLab(event) {
+    event.preventDefault();
+
+    if (!promptLabWord.trim() || !promptLabSentence.trim()) {
+      setPromptLabError("Please enter both a word and a sentence.");
+      return;
+    }
+
+    setPromptLabLoading(true);
+    setPromptLabError("");
+
+    try {
+      const res = await fetch(`${API}/learning/prompt-lab`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          word: promptLabWord.trim(),
+          sentence: promptLabSentence.trim(),
+          prompt: promptLabTemplate.trim(),
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Failed to run the prompt.");
+      }
+
+      const data = await res.json();
+      const nextRun = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        createdAt: new Date().toISOString(),
+        word: data.word || promptLabWord.trim(),
+        sentence: data.sentence || promptLabSentence.trim(),
+        prompt: data.prompt || promptLabTemplate.trim(),
+        renderedPrompt: data.rendered_prompt || "",
+        output: data.output || "",
+        model: data.model || "",
+      };
+      setPromptLabRuns((current) => [nextRun, ...current].slice(0, PROMPT_LAB_MAX_RUNS));
+    } catch (e) {
+      setPromptLabError(e.message || "Failed to run the prompt.");
+    } finally {
+      setPromptLabLoading(false);
+    }
   }
 
   function updateScanWord(id, patch) {
@@ -817,7 +974,7 @@ function LearningApp() {
                           rows={2}
                           value={item.meaningText}
                           readOnly
-                          placeholder={"meaning in English\nmeaning in Chinese"}
+                          placeholder={"meaning used in sentence\ncommon meaning if different"}
                         />
 
                         <AutoResizeTextarea
@@ -891,6 +1048,147 @@ function LearningApp() {
 
   if (page === "quiz") {
     return <Quiz onBack={() => setPage("home")} />;
+  }
+
+  if (page === "promptLab") {
+    return (
+      <div className="learning-shell">
+        {renderSidebar()}
+        <main className="learning-workspace">
+          <section className="learning-panel learning-prompt-lab">
+            <div className="learning-panel-header">
+              <div>
+                <span className="learning-eyebrow">OpenAI prompt playground</span>
+                <h2>Prompt Lab</h2>
+              </div>
+              <div className="learning-quick-session-actions">
+                <button type="button" onClick={loadPromptLabDemo}>
+                  Load demo
+                </button>
+                <button type="button" onClick={() => setPage("home")}>
+                  Back
+                </button>
+              </div>
+            </div>
+
+            <p className="learning-prompt-lab__intro">
+              Iterate on the word prompt here without rescanning a photo. Keep or remove
+              {" "}
+              <code>{`{word}`}</code>
+              {" "}
+              and
+              {" "}
+              <code>{`{sentence}`}</code>
+              {" "}
+              placeholders as you like.
+            </p>
+
+            <form className="learning-prompt-lab__form" onSubmit={runPromptLab}>
+              <div className="learning-prompt-lab__field-grid">
+                <label className="learning-quick-session-field">
+                  <span>Word</span>
+                  <input
+                    type="text"
+                    value={promptLabWord}
+                    onChange={(event) => setPromptLabWord(event.target.value)}
+                    placeholder="autocrat"
+                    required
+                  />
+                </label>
+
+                <label className="learning-quick-session-field">
+                  <span>Sentence</span>
+                  <AutoResizeTextarea
+                    rows={3}
+                    value={promptLabSentence}
+                    onChange={(event) => setPromptLabSentence(event.target.value)}
+                    placeholder="Enter the sentence where the word appears."
+                    required
+                  />
+                </label>
+              </div>
+
+              <label className="learning-quick-session-field">
+                <span>Prompt</span>
+                <AutoResizeTextarea
+                  rows={12}
+                  value={promptLabTemplate}
+                  onChange={(event) => setPromptLabTemplate(event.target.value)}
+                  placeholder="Write the prompt you want to test."
+                />
+              </label>
+
+              <div className="learning-prompt-lab__actions">
+                <button type="submit" disabled={promptLabLoading}>
+                  {promptLabLoading ? "Running..." : "Run prompt"}
+                </button>
+                <button type="button" onClick={resetPromptLabTemplate} disabled={promptLabLoading}>
+                  Reset prompt
+                </button>
+                <button type="button" onClick={clearPromptLabRuns} disabled={promptLabLoading || promptLabRuns.length === 0}>
+                  Clear results
+                </button>
+              </div>
+            </form>
+
+            {promptLabError ? <p className="learning-scan-error">{promptLabError}</p> : null}
+
+            <div className="learning-prompt-lab__runs">
+              <div className="learning-prompt-lab__runs-header">
+                <h3>Recent runs</h3>
+                <p>Compare outputs, then reload the prompt version that feels best.</p>
+              </div>
+
+              {promptLabRuns.length === 0 ? (
+                <p className="learning-scan-empty">
+                  No runs yet. Start with the demo or your own sentence.
+                </p>
+              ) : (
+                promptLabRuns.map((run, index) => (
+                  <article key={run.id} className="learning-prompt-run">
+                    <div className="learning-prompt-run__header">
+                      <div>
+                        <strong>Run {promptLabRuns.length - index}</strong>
+                        <span>
+                          {run.word ? ` · ${run.word}` : ""}
+                          {run.model ? ` · ${run.model}` : ""}
+                        </span>
+                      </div>
+                      <button type="button" onClick={() => applyPromptLabRun(run)}>
+                        Reuse
+                      </button>
+                    </div>
+
+                    <AutoResizeTextarea
+                      rows={4}
+                      value={run.prompt}
+                      readOnly
+                      placeholder="Prompt template"
+                    />
+
+                    {run.renderedPrompt && run.renderedPrompt !== run.prompt ? (
+                      <AutoResizeTextarea
+                        rows={4}
+                        value={run.renderedPrompt}
+                        readOnly
+                        placeholder="Rendered prompt sent to OpenAI"
+                      />
+                    ) : null}
+
+                    <AutoResizeTextarea
+                      rows={8}
+                      value={run.output}
+                      readOnly
+                      placeholder="Model output"
+                    />
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+        </main>
+      </div>
+    );
   }
 
   if (page === "wordBank") {
