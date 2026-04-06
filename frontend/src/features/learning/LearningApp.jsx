@@ -40,6 +40,16 @@ function AutoResizeTextarea({ value, onChange, ...props }) {
   );
 }
 
+function normalizeScannedWord(text) {
+  return String(text || "")
+    .replace(/[’‘`]/g, "'")
+    .replace(/[‐‑‒–—]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[^A-Za-z]+/, "")
+    .replace(/[^A-Za-z]+$/, "");
+}
+
 function LearningApp() {
   const [page, setPage] = useState("home");
   const [sessions, setSessions] = useState([]);
@@ -274,7 +284,7 @@ function LearningApp() {
             const nextWord = {
               id: `${Date.now()}-${wordIndex}`,
               selected: true,
-              word: item.word || "",
+              word: normalizeScannedWord(item.word || ""),
               ipa: item.ipa || "",
               meaningText: [item.meaning_en, item.meaning_zh].filter(Boolean).join("\n"),
               roots: item.roots || "",
@@ -322,7 +332,13 @@ function LearningApp() {
   }
 
   async function saveScannedWords() {
-    const selectedWords = scanWords.filter((item) => item.selected && item.word.trim());
+    const preparedWords = scanWords.map((item) => ({
+      ...item,
+      word: normalizeScannedWord(item.word),
+    }));
+    setScanWords(preparedWords);
+
+    const selectedWords = preparedWords.filter((item) => item.selected && item.word);
     if (selectedWords.length === 0) {
       skipScannedWords();
       return;
@@ -377,7 +393,7 @@ function LearningApp() {
   }
 
   function speakWord(text) {
-    const spokenText = (text || "").trim();
+    const spokenText = normalizeScannedWord(text);
     if (!spokenText || !window.speechSynthesis) {
       return;
     }
@@ -398,7 +414,7 @@ function LearningApp() {
   }
 
   async function playWordPronunciation(wordText) {
-    const normalizedWord = (wordText || "").trim();
+    const normalizedWord = normalizeScannedWord(wordText);
     if (!normalizedWord) {
       return;
     }
@@ -742,7 +758,12 @@ function LearningApp() {
             <div className="learning-scan-modal-backdrop" onClick={skipScannedWords}>
               <div className="learning-scan-modal learning-panel" onClick={(event) => event.stopPropagation()}>
                 <div className="learning-scan-review__header">
-                  <h4>Review scanned words</h4>
+                  <div className="learning-scan-review__title">
+                    <h4>Review scanned words</h4>
+                    <p className="learning-scan-note">
+                      Fix the word if OCR is wrong, then tap IPA or Play.
+                    </p>
+                  </div>
                   <div className="learning-scan-review__actions">
                     <button type="button" onClick={skipScannedWords} disabled={isSavingScanWords}>
                       Skip
@@ -774,7 +795,13 @@ function LearningApp() {
                             className="learning-scan-word-input"
                             type="text"
                             value={item.word}
-                            readOnly
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            onChange={(event) => updateScanWord(item.id, { word: event.target.value })}
+                            onBlur={(event) => updateScanWord(item.id, {
+                              word: normalizeScannedWord(event.target.value),
+                            })}
                             placeholder="word"
                           />
                           <button

@@ -381,6 +381,11 @@
   gap: 1rem;
 }
 
+.learning-scan-review__title {
+  display: grid;
+  gap: 0.35rem;
+}
+
 .learning-scan-review__actions {
   display: flex;
   gap: 0.6rem;
@@ -393,6 +398,13 @@
   margin: 0;
   font-size: 1rem;
   color: var(--ink-strong);
+}
+
+.learning-scan-note {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  line-height: 1.4;
 }
 
 .learning-scan-review__footer {
@@ -443,6 +455,9 @@
   line-height: 1;
   letter-spacing: -0.03em;
   color: var(--ink-strong);
+  min-height: 3.2rem;
+  border-radius: 1rem !important;
+  background: rgba(255, 255, 255, 0.82);
 }
 
 .learning-scan-ipa-button {
