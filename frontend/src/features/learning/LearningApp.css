@@ -423,7 +423,6 @@
 
 .learning-scan-card {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
   gap: 0.8rem;
   align-items: start;
   padding: 0.9rem;
@@ -432,10 +431,21 @@
   background: rgba(255, 255, 255, 0.58);
 }
 
-.learning-scan-card input[type="checkbox"] {
+.learning-scan-select {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3rem;
+  min-height: 3.2rem;
+  border: 1px solid rgba(71, 61, 53, 0.08);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.learning-scan-select input[type="checkbox"] {
   width: 1.1rem;
   height: 1.1rem;
-  margin-top: 0.95rem;
+  margin: 0;
 }
 
 .learning-scan-card__body {
@@ -445,8 +455,9 @@
 
 .learning-scan-card__top-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 0.65rem;
+  align-items: center;
 }
 
 .learning-scan-word-input {
@@ -816,7 +827,8 @@
   }
 
   .learning-scan-card__top-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.55rem;
   }
 
   .learning-prompt-lab__runs-header,

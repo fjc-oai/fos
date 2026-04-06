@@ -940,14 +940,16 @@ function LearningApp() {
                   ) : null}
                   {scanWords.map((item) => (
                     <div key={item.id} className="learning-scan-card">
-                      <input
-                        type="checkbox"
-                        checked={item.selected}
-                        onChange={(event) => updateScanWord(item.id, { selected: event.target.checked })}
-                        aria-label={`Select ${item.word || "word"}`}
-                      />
                       <div className="learning-scan-card__body">
                         <div className="learning-scan-card__top-row">
+                          <label className="learning-scan-select">
+                            <input
+                              type="checkbox"
+                              checked={item.selected}
+                              onChange={(event) => updateScanWord(item.id, { selected: event.target.checked })}
+                              aria-label={`Select ${item.word || "word"}`}
+                            />
+                          </label>
                           <input
                             className="learning-scan-word-input"
                             type="text"
