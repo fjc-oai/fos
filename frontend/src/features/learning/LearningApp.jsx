@@ -7,9 +7,9 @@ const API = import.meta.env.VITE_API_URL || "/api";
 
 const LEARNING_PAGES = [
   { id: "wordBank", label: "Word Bank" },
-  { id: "promptLab", label: "Prompt Lab" },
   { id: "review", label: "Review" },
   { id: "quiz", label: "Quiz" },
+  { id: "promptLab", label: "Prompt Lab" },
 ];
 
 const QUICK_SESSION_MINUTES = [15, 30, 45, 60];
