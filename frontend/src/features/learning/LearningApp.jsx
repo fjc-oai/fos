@@ -113,6 +113,7 @@ function LearningApp() {
   const [scanError, setScanError] = useState("");
   const [isScanningImage, setIsScanningImage] = useState(false);
   const [isSavingScanWords, setIsSavingScanWords] = useState(false);
+  const [pronouncingScanWordId, setPronouncingScanWordId] = useState("");
   const [reviewing, setReviewing] = useState(false);
   const scanInputRef = useRef(null);
   const pronunciationAudioRef = useRef(null);
@@ -570,31 +571,43 @@ function LearningApp() {
     window.speechSynthesis.speak(utterance);
   }
 
-  async function playWordPronunciation(wordText) {
+  async function playWordPronunciation(wordText, wordId = "") {
     const normalizedWord = normalizeScannedWord(wordText);
     if (!normalizedWord) {
       return;
     }
 
-    try {
-      const res = await fetch(
-        `${API}/words/pronunciation/${encodeURIComponent(normalizedWord)}`,
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (data.audio_url) {
-          pronunciationAudioRef.current?.pause();
-          const audio = new Audio(data.audio_url);
-          pronunciationAudioRef.current = audio;
-          await audio.play();
-          return;
-        }
+    const pronunciationToken = wordId || normalizedWord;
+    let didFallback = false;
+    const clearPronouncingState = () => {
+      setPronouncingScanWordId((current) => (
+        current === pronunciationToken ? "" : current
+      ));
+    };
+    const fallbackToBrowserVoice = () => {
+      if (didFallback) {
+        return;
       }
+      didFallback = true;
+      clearPronouncingState();
+      speakWord(normalizedWord);
+    };
+
+    setPronouncingScanWordId(pronunciationToken);
+    try {
+      pronunciationAudioRef.current?.pause();
+      const audio = new Audio(
+        `${API}/words/pronunciation/${encodeURIComponent(normalizedWord)}/audio`,
+      );
+      audio.preload = "auto";
+      audio.addEventListener("ended", clearPronouncingState, { once: true });
+      audio.addEventListener("error", fallbackToBrowserVoice, { once: true });
+      pronunciationAudioRef.current = audio;
+      await audio.play();
     } catch (e) {
       console.error(e);
+      fallbackToBrowserVoice();
     }
-
-    speakWord(normalizedWord);
   }
 
   async function submitWord(e) {
@@ -918,7 +931,7 @@ function LearningApp() {
                   <div className="learning-scan-review__title">
                     <h4>Review scanned words</h4>
                     <p className="learning-scan-note">
-                      Fix the word if OCR is wrong, then tap IPA or Play.
+                      Review the scanned word, then tap IPA or Play.
                     </p>
                   </div>
                   <div className="learning-scan-review__actions">
@@ -957,18 +970,17 @@ function LearningApp() {
                             autoCapitalize="none"
                             autoCorrect="off"
                             spellCheck={false}
-                            onChange={(event) => updateScanWord(item.id, { word: event.target.value })}
-                            onBlur={(event) => updateScanWord(item.id, {
-                              word: normalizeScannedWord(event.target.value),
-                            })}
+                            readOnly
+                            aria-label={`Scanned word: ${item.word || "word"}`}
                             placeholder="word"
                           />
                           <button
                             type="button"
                             className="learning-scan-ipa-button"
-                            onClick={() => playWordPronunciation(item.word)}
+                            onClick={() => playWordPronunciation(item.word, item.id)}
+                            disabled={pronouncingScanWordId === item.id}
                           >
-                            {item.ipa || "Play"}
+                            {pronouncingScanWordId === item.id ? "Playing..." : item.ipa || "Play"}
                           </button>
                         </div>
 

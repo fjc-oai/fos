@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 import os
 import pathlib
@@ -13,7 +14,7 @@ from typing import List, Literal, Optional
 import sqlalchemy as sa
 from fastapi import File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
-from starlette.responses import StreamingResponse
+from starlette.responses import FileResponse, StreamingResponse
 
 
 def setup_study_module(app, engine, metadata):
@@ -322,6 +323,241 @@ def setup_study_module(app, engine, metadata):
             rendered = f"{rendered}\n\n" + "\n".join(prompt_context)
 
         return rendered
+
+    pronunciation_cache_dir = pathlib.Path(__file__).resolve().parents[1] / ".cache" / "pronunciations"
+    pronunciation_media_types = {
+        ".aac": "audio/aac",
+        ".flac": "audio/flac",
+        ".m4a": "audio/mp4",
+        ".mp3": "audio/mpeg",
+        ".ogg": "audio/ogg",
+        ".opus": "audio/opus",
+        ".wav": "audio/wav",
+    }
+    pronunciation_content_type_extensions = {
+        "audio/aac": ".aac",
+        "audio/flac": ".flac",
+        "audio/mp4": ".m4a",
+        "audio/mpeg": ".mp3",
+        "audio/mp3": ".mp3",
+        "audio/ogg": ".ogg",
+        "audio/opus": ".opus",
+        "audio/wav": ".wav",
+        "audio/wave": ".wav",
+        "audio/x-wav": ".wav",
+    }
+    max_pronunciation_audio_bytes = 5 * 1024 * 1024
+
+    def pronunciation_slug(word: str):
+        slug = re.sub(r"[^a-z0-9]+", "-", word.lower()).strip("-")
+        return slug[:40] or "word"
+
+    def pronunciation_cache_filename(prefix: str, word: str, extension: str, *parts: str):
+        digest = hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()[:20]
+        return f"{prefix}-{pronunciation_slug(word)}-{digest}{extension}"
+
+    def pronunciation_cache_url(filename: str):
+        return f"/api/words/pronunciation-audio/{filename}"
+
+    def pronunciation_audio_extension(audio_url: str, content_type: str = ""):
+        url_extension = pathlib.PurePosixPath(
+            urllib.parse.urlparse(audio_url).path,
+        ).suffix.lower()
+        if url_extension in pronunciation_media_types:
+            return url_extension
+
+        content_type = content_type.split(";", 1)[0].strip().lower()
+        return pronunciation_content_type_extensions.get(content_type, ".mp3")
+
+    def dictionary_pronunciation_cache_path(normalized_word: str, extension: str):
+        return pronunciation_cache_dir / pronunciation_cache_filename(
+            "dict",
+            normalized_word,
+            extension,
+            normalized_word.lower(),
+        )
+
+    def cached_dictionary_pronunciation_path(normalized_word: str):
+        for extension in pronunciation_media_types:
+            target_path = dictionary_pronunciation_cache_path(normalized_word, extension)
+            if target_path.exists():
+                return target_path
+        return None
+
+    def write_pronunciation_stream(response, target_path: pathlib.Path):
+        pronunciation_cache_dir.mkdir(parents=True, exist_ok=True)
+        tmp_path = target_path.with_name(f"{target_path.name}.tmp")
+        total_bytes = 0
+        try:
+            with open(tmp_path, "wb") as audio_file:
+                while True:
+                    chunk = response.read(64 * 1024)
+                    if not chunk:
+                        break
+                    total_bytes += len(chunk)
+                    if total_bytes > max_pronunciation_audio_bytes:
+                        raise ValueError("Pronunciation audio is too large")
+                    audio_file.write(chunk)
+
+            if total_bytes == 0:
+                return False
+            tmp_path.replace(target_path)
+            return True
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+    def lookup_dictionary_pronunciation_url(normalized_word: str):
+        lookup_url = (
+            "https://api.dictionaryapi.dev/api/v2/entries/en/"
+            + urllib.parse.quote(normalized_word)
+        )
+        request = urllib.request.Request(
+            lookup_url,
+            headers={"User-Agent": "fos/1.0"},
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=8) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+            return ""
+
+        if not isinstance(payload, list):
+            return ""
+
+        for entry in payload:
+            for phonetic in entry.get("phonetics", []) if isinstance(entry, dict) else []:
+                audio_url = str(phonetic.get("audio") or "").strip()
+                if audio_url.startswith("//"):
+                    audio_url = "https:" + audio_url
+                if audio_url:
+                    return audio_url
+
+        return ""
+
+    def cache_dictionary_pronunciation(normalized_word: str, audio_url: str):
+        extension = pronunciation_audio_extension(audio_url)
+        target_path = dictionary_pronunciation_cache_path(normalized_word, extension)
+        if target_path.exists():
+            return target_path
+
+        request = urllib.request.Request(
+            audio_url,
+            headers={"User-Agent": "fos/1.0"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=12) as response:
+                response_extension = pronunciation_audio_extension(
+                    audio_url,
+                    response.headers.get("Content-Type", ""),
+                )
+                if response_extension != extension:
+                    target_path = dictionary_pronunciation_cache_path(
+                        normalized_word,
+                        response_extension,
+                    )
+                    if target_path.exists():
+                        return target_path
+                if write_pronunciation_stream(response, target_path):
+                    return target_path
+        except (ValueError, urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
+            return None
+
+        return None
+
+    def openai_pronunciation_settings():
+        model = os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts").strip() or "gpt-4o-mini-tts"
+        voice = os.getenv("OPENAI_TTS_VOICE", "marin").strip() or "marin"
+        instructions = (
+            os.getenv("OPENAI_TTS_INSTRUCTIONS", "").strip()
+            or "Pronounce this English vocabulary word clearly and naturally in American English. Speak only the word."
+        )
+        return model, voice, instructions
+
+    def openai_pronunciation_cache_path(normalized_word: str):
+        model, voice, instructions = openai_pronunciation_settings()
+        filename = pronunciation_cache_filename(
+            "openai",
+            normalized_word,
+            ".mp3",
+            model,
+            voice,
+            instructions,
+            normalized_word.lower(),
+        )
+        return pronunciation_cache_dir / filename
+
+    def cache_openai_pronunciation(normalized_word: str):
+        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        if not api_key:
+            return None
+
+        model, voice, instructions = openai_pronunciation_settings()
+        target_path = openai_pronunciation_cache_path(normalized_word)
+        if target_path.exists():
+            return target_path
+
+        from openai import AuthenticationError, OpenAI, OpenAIError
+
+        client = OpenAI(api_key=api_key)
+        try:
+            response = client.audio.speech.create(
+                model=model,
+                voice=voice,
+                input=normalized_word,
+                instructions=instructions,
+                response_format="mp3",
+                speed=0.95,
+            )
+            pronunciation_cache_dir.mkdir(parents=True, exist_ok=True)
+            tmp_path = target_path.with_name(f"{target_path.name}.tmp")
+            try:
+                response.write_to_file(tmp_path)
+                if tmp_path.stat().st_size == 0:
+                    return None
+                tmp_path.replace(target_path)
+            finally:
+                if tmp_path.exists():
+                    tmp_path.unlink()
+        except AuthenticationError as exc:
+            raise HTTPException(status_code=401, detail="Invalid OpenAI API key") from exc
+        except OpenAIError as exc:
+            raise HTTPException(status_code=502, detail=f"OpenAI pronunciation failed: {exc}") from exc
+
+        return target_path
+
+    def resolve_pronunciation_audio(normalized_word: str):
+        cached_dictionary_path = cached_dictionary_pronunciation_path(normalized_word)
+        if cached_dictionary_path:
+            return cached_dictionary_path, "dictionaryapi.dev"
+
+        cached_openai_path = openai_pronunciation_cache_path(normalized_word)
+        if cached_openai_path.exists():
+            return cached_openai_path, "openai"
+
+        dictionary_audio_url = lookup_dictionary_pronunciation_url(normalized_word)
+        if dictionary_audio_url:
+            dictionary_audio_path = cache_dictionary_pronunciation(
+                normalized_word,
+                dictionary_audio_url,
+            )
+            if dictionary_audio_path:
+                return dictionary_audio_path, "dictionaryapi.dev"
+
+        openai_audio_path = cache_openai_pronunciation(normalized_word)
+        if openai_audio_path:
+            return openai_audio_path, "openai"
+
+        return None, ""
+
+    def pronunciation_file_response(audio_path: pathlib.Path, source: str):
+        extension = audio_path.suffix.lower()
+        return FileResponse(
+            audio_path,
+            media_type=pronunciation_media_types.get(extension, "audio/mpeg"),
+            headers={"X-Pronunciation-Source": source},
+        )
 
     def ensure_study_schema():
         inspector = sa.inspect(engine)
@@ -845,48 +1081,49 @@ def setup_study_module(app, engine, metadata):
 
         return {"existing_words": sorted({row[0] for row in rows if row[0]})}
 
+    @app.get("/api/words/pronunciation-audio/{filename}")
+    def get_cached_pronunciation_audio(filename: str):
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", filename):
+            raise HTTPException(status_code=400, detail="Invalid pronunciation audio filename")
+
+        audio_path = (pronunciation_cache_dir / filename).resolve()
+        cache_root = pronunciation_cache_dir.resolve()
+        if audio_path.parent != cache_root:
+            raise HTTPException(status_code=400, detail="Invalid pronunciation audio filename")
+        if audio_path.suffix.lower() not in pronunciation_media_types:
+            raise HTTPException(status_code=400, detail="Unsupported pronunciation audio format")
+        if not audio_path.exists():
+            raise HTTPException(status_code=404, detail="Pronunciation audio not found")
+
+        return pronunciation_file_response(audio_path, "cache")
+
+    @app.get("/api/words/pronunciation/{word}/audio")
+    def play_word_pronunciation_audio(word: str):
+        normalized_word = word.strip()
+        if not normalized_word:
+            raise HTTPException(status_code=400, detail="Word is required")
+
+        audio_path, source = resolve_pronunciation_audio(normalized_word)
+        if not audio_path:
+            raise HTTPException(status_code=404, detail="Pronunciation audio not found")
+
+        return pronunciation_file_response(audio_path, source)
+
     @app.get("/api/words/pronunciation/{word}", response_model=WordPronunciationResponse)
     def get_word_pronunciation(word: str):
         normalized_word = word.strip()
         if not normalized_word:
             raise HTTPException(status_code=400, detail="Word is required")
 
-        lookup_url = (
-            "https://api.dictionaryapi.dev/api/v2/entries/en/"
-            + urllib.parse.quote(normalized_word)
-        )
+        audio_path, source = resolve_pronunciation_audio(normalized_word)
+        if not audio_path:
+            return {"word": normalized_word, "audio_url": "", "source": ""}
 
-        request = urllib.request.Request(
-            lookup_url,
-            headers={"User-Agent": "fos/1.0"},
-        )
-
-        try:
-            with urllib.request.urlopen(request, timeout=8) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            if exc.code == 404:
-                return {"word": normalized_word, "audio_url": "", "source": "dictionaryapi.dev"}
-            raise HTTPException(status_code=502, detail="Pronunciation lookup failed") from exc
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-            raise HTTPException(status_code=502, detail="Pronunciation lookup failed") from exc
-
-        if not isinstance(payload, list):
-            return {"word": normalized_word, "audio_url": "", "source": "dictionaryapi.dev"}
-
-        for entry in payload:
-            for phonetic in entry.get("phonetics", []) if isinstance(entry, dict) else []:
-                audio_url = str(phonetic.get("audio") or "").strip()
-                if audio_url.startswith("//"):
-                    audio_url = "https:" + audio_url
-                if audio_url:
-                    return {
-                        "word": normalized_word,
-                        "audio_url": audio_url,
-                        "source": "dictionaryapi.dev",
-                    }
-
-        return {"word": normalized_word, "audio_url": "", "source": "dictionaryapi.dev"}
+        return {
+            "word": normalized_word,
+            "audio_url": pronunciation_cache_url(audio_path.name),
+            "source": source,
+        }
 
     @app.get("/api/words", response_model=List[Word])
     def list_words(start: Optional[date_cls] = None, end: Optional[date_cls] = None):
