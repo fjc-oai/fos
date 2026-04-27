@@ -94,14 +94,13 @@ The core idea is:
 
 `Decide today, and let the system carry the rest of the mental load.`
 
-It separates what I need to do today from everything else, while still keeping blocked work, deadlines, backlog, and projects in one place.
+It separates what I need to do today from everything else, while still keeping each person's tasks, deadlines, backlog, and projects in one place.
 
 ### Major Usage
 
-- capture tasks into work/life
+- capture tasks for `F` or `M`
 - plan tasks into `Today`
-- track `main`, `blocked`, `deadline`, and `backlog` items
-- set follow-up times for blocked tasks
+- track `deadline` and `backlog` items
 - manage lightweight projects
 - write a daily note
 - review what was closed today

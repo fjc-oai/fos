@@ -706,8 +706,13 @@ textarea {
 
 .segmented-control--four-up,
 .segmented-control--five-up,
+.segmented-control--two-up,
 .segmented-control--three-up {
   display: grid;
+}
+
+.segmented-control--two-up {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .segmented-control--four-up {
@@ -1050,6 +1055,7 @@ textarea {
 
   .segmented-control--four-up,
   .segmented-control--five-up,
+  .segmented-control--two-up,
   .segmented-control--three-up {
     grid-template-columns: repeat(auto-fit, minmax(5rem, 1fr));
   }

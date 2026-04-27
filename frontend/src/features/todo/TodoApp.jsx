@@ -9,23 +9,13 @@ const PRIMARY_TABS = [
 ];
 
 const AREA_TABS = [
-  { id: "work", label: "Work" },
-  { id: "life", label: "Life" },
+  { id: "work", label: "F" },
+  { id: "life", label: "M" },
 ];
 
 const TYPE_TABS = [
-  { id: "main", label: "Main" },
-  { id: "blocked", label: "Blocked" },
   { id: "deadline", label: "Deadline" },
   { id: "backlog", label: "Backlog" },
-];
-
-const CHECKBACK_OPTIONS = [
-  { label: "1h", hours: 1 },
-  { label: "2h", hours: 2 },
-  { label: "6h", hours: 6 },
-  { label: "1d", days: 1 },
-  { label: "2d", days: 2 },
 ];
 
 function TodoApp({ isMobile = false }) {
@@ -33,11 +23,11 @@ function TodoApp({ isMobile = false }) {
   const [projects, setProjects] = useState([]);
   const [primaryTab, setPrimaryTab] = useState("today");
   const [areaTab, setAreaTab] = useState("work");
-  const [typeTab, setTypeTab] = useState("main");
+  const [typeTab, setTypeTab] = useState("deadline");
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [captureTitle, setCaptureTitle] = useState("");
   const [captureArea, setCaptureArea] = useState("work");
-  const [captureTaskType, setCaptureTaskType] = useState(getDefaultCaptureTaskType("work"));
+  const [captureTaskType, setCaptureTaskType] = useState(getDefaultCaptureTaskType());
   const [captureProjectId, setCaptureProjectId] = useState("");
   const [todayNoteDraft, setTodayNoteDraft] = useState("");
   const [todayNoteSavedAt, setTodayNoteSavedAt] = useState(null);
@@ -292,8 +282,6 @@ function TodoApp({ isMobile = false }) {
 
   const openTasks = sortTasks(tasks.filter((task) => task.status === "open"), projectById);
   const doneTasks = sortCompletedTasks(tasks.filter((task) => task.status === "done"), projectById);
-  const mainTasks = sortTasks(openTasks.filter((task) => task.taskType === "main"), projectById);
-  const blockedTasks = sortTasks(openTasks.filter((task) => task.taskType === "blocked"), projectById);
   const deadlineTasks = sortTasks(openTasks.filter((task) => task.taskType === "deadline"), projectById);
   const backlogTasks = sortTasks(openTasks.filter((task) => task.taskType === "backlog"), projectById);
   const workTasks = sortTasks(openTasks.filter((task) => task.area === "work"), projectById);
@@ -307,7 +295,6 @@ function TodoApp({ isMobile = false }) {
       (task) =>
         task.plannedFor === todayKey &&
         task.area === "work" &&
-        task.taskType !== "blocked" &&
         task.taskType !== "deadline",
     ),
     projectById,
@@ -317,19 +304,16 @@ function TodoApp({ isMobile = false }) {
       (task) =>
         task.plannedFor === todayKey &&
         task.area === "life" &&
-        task.taskType !== "blocked" &&
         task.taskType !== "deadline",
     ),
     projectById,
   );
-  const blockedTodayTasks = sortTodayTasks(
-    blockedTasks.filter(
-      (task) => !task.followUpAt || isOnOrBefore(task.followUpAt, getEndOfLocalDay(new Date())),
-    ),
-    projectById,
-  );
   const deadlineTodayTasks = sortTodayTasks(
-    deadlineTasks.filter((task) => task.dueAt && isOnOrBefore(task.dueAt, getEndOfLocalDay(new Date()))),
+    deadlineTasks.filter(
+      (task) =>
+        task.plannedFor === todayKey ||
+        (task.dueAt && isOnOrBefore(task.dueAt, getEndOfLocalDay(new Date()))),
+    ),
     projectById,
   );
   const todayWorkPlannedTasks = sortTodayTasks(
@@ -337,31 +321,24 @@ function TodoApp({ isMobile = false }) {
       (task) =>
         task.plannedFor === todayKey &&
         task.area === "work" &&
-        task.taskType !== "blocked" &&
         task.taskType !== "deadline",
     ),
     projectById,
   );
 
   const todayWorkSections = [
-    { id: "main", title: "Main", tasks: todayWorkPlannedTasks.filter((task) => task.taskType === "main") },
-    { id: "blocked", title: "Blocked", tasks: blockedTodayTasks.filter((task) => task.area === "work") },
     { id: "deadline", title: "Deadline", tasks: deadlineTodayTasks.filter((task) => task.area === "work") },
     { id: "backlog", title: "Backlog", tasks: todayWorkPlannedTasks.filter((task) => task.taskType === "backlog") },
   ];
   const todayLifeSections = [
-    { id: "blocked", title: "Blocked", tasks: blockedTodayTasks.filter((task) => task.area === "life") },
     { id: "deadline", title: "Deadline", tasks: deadlineTodayTasks.filter((task) => task.area === "life") },
     { id: "backlog", title: "Backlog", tasks: todayLifeTasks.filter((task) => task.taskType === "backlog") },
   ];
   const workSections = [
-    { id: "main", title: "Main", tasks: workTasks.filter((task) => task.taskType === "main") },
-    { id: "blocked", title: "Blocked", tasks: workTasks.filter((task) => task.taskType === "blocked") },
     { id: "deadline", title: "Deadline", tasks: workTasks.filter((task) => task.taskType === "deadline") },
     { id: "backlog", title: "Backlog", tasks: workTasks.filter((task) => task.taskType === "backlog") },
   ];
   const lifeSections = [
-    { id: "blocked", title: "Blocked", tasks: lifeTasks.filter((task) => task.taskType === "blocked") },
     { id: "deadline", title: "Deadline", tasks: lifeTasks.filter((task) => task.taskType === "deadline") },
     { id: "backlog", title: "Backlog", tasks: lifeTasks.filter((task) => task.taskType === "backlog") },
   ];
@@ -371,7 +348,6 @@ function TodoApp({ isMobile = false }) {
   const todayCount =
     todayWorkTasks.length +
     todayLifeTasks.length +
-    blockedTodayTasks.length +
     deadlineTodayTasks.length;
   const closedTodayTasks = doneTasks.filter(
     (task) => task.completedAt && getLocalDateKey(new Date(task.completedAt)) === todayKey,
@@ -397,7 +373,7 @@ function TodoApp({ isMobile = false }) {
 
     if (task) {
       setCaptureTitle("");
-      setCaptureTaskType(getDefaultCaptureTaskType(captureArea));
+      setCaptureTaskType(getDefaultCaptureTaskType());
       setCaptureProjectId("");
       setSelectedTaskId(task.id);
       setIsNativeCaptureOpen(false);
@@ -418,17 +394,11 @@ function TodoApp({ isMobile = false }) {
       return;
     }
 
-    if (task.area === "life" && taskType === "main") {
-      return;
-    }
-
     const patch = { taskType };
     if (taskType !== "deadline") {
       patch.dueAt = null;
     }
-    if (taskType !== "blocked") {
-      patch.followUpAt = null;
-    }
+    patch.followUpAt = null;
     await patchTask(taskId, patch);
   }
 
@@ -511,11 +481,6 @@ function TodoApp({ isMobile = false }) {
       tone: "accent",
     },
     {
-      label: "Blocked Today",
-      value: blockedTodayTasks.length,
-      tone: "neutral",
-    },
-    {
       label: "Due Today",
       value: deadlineTodayTasks.length,
       tone: deadlineTodayTasks.length > 0 ? "warning" : "neutral",
@@ -532,7 +497,6 @@ function TodoApp({ isMobile = false }) {
               <h1>Today</h1>
               <div className="todo-native-hero__stats" aria-label="Summary">
                 <span>{todayCount} today</span>
-                <span>{blockedTodayTasks.length} blocked</span>
                 <span>{deadlineTodayTasks.length} due</span>
               </div>
             </div>
@@ -546,7 +510,7 @@ function TodoApp({ isMobile = false }) {
           {primaryTab === "today" ? (
             <>
               <AreaSectionPanel
-                emptyState="No work tasks need attention today."
+                emptyState={`No ${getAreaLabel("work")} tasks need attention today.`}
                 onReorderSection={handleReorderTodaySection}
                 onSelect={setSelectedTaskId}
                 onSetStatus={handleSetTaskStatus}
@@ -554,12 +518,12 @@ function TodoApp({ isMobile = false }) {
                 projectById={projectById}
                 sections={todayWorkSections}
                 selectedTaskId={selectedTaskId}
-                title="Work"
+                title={getAreaLabel("work")}
                 todayKey={todayKey}
               />
 
               <AreaSectionPanel
-                emptyState="No life tasks need attention today."
+                emptyState={`No ${getAreaLabel("life")} tasks need attention today.`}
                 onReorderSection={handleReorderTodaySection}
                 onSelect={setSelectedTaskId}
                 onSetStatus={handleSetTaskStatus}
@@ -567,7 +531,7 @@ function TodoApp({ isMobile = false }) {
                 projectById={projectById}
                 sections={todayLifeSections}
                 selectedTaskId={selectedTaskId}
-                title="Life"
+                title={getAreaLabel("life")}
                 todayKey={todayKey}
               />
               <DailyNotePanel
@@ -586,26 +550,26 @@ function TodoApp({ isMobile = false }) {
                 showBacklog={showBacklogInAllTasks}
               />
               <AreaSectionPanel
-                emptyState="No open work tasks."
+                emptyState={`No open ${getAreaLabel("work")} tasks.`}
                 onSelect={setSelectedTaskId}
                 onSetStatus={handleSetTaskStatus}
                 onToggleToday={handleToggleToday}
                 projectById={projectById}
                 sections={allWorkSections}
                 selectedTaskId={selectedTaskId}
-                title="Work"
+                title={getAreaLabel("work")}
                 todayKey={todayKey}
               />
 
               <AreaSectionPanel
-                emptyState="No open life tasks."
+                emptyState={`No open ${getAreaLabel("life")} tasks.`}
                 onSelect={setSelectedTaskId}
                 onSetStatus={handleSetTaskStatus}
                 onToggleToday={handleToggleToday}
                 projectById={projectById}
                 sections={allLifeSections}
                 selectedTaskId={selectedTaskId}
-                title="Life"
+                title={getAreaLabel("life")}
                 todayKey={todayKey}
               />
             </>
@@ -640,7 +604,7 @@ function TodoApp({ isMobile = false }) {
               projectById={projectById}
               selectedTaskId={selectedTaskId}
               tasks={areaTab === "work" ? workTasks : lifeTasks}
-              title={areaTab === "work" ? "Work" : "Life"}
+              title={getAreaLabel(areaTab)}
               todayKey={todayKey}
             />
           ) : (
@@ -651,7 +615,7 @@ function TodoApp({ isMobile = false }) {
               onToggleToday={handleToggleToday}
               projectById={projectById}
               selectedTaskId={selectedTaskId}
-              tasks={getTypeTasks(typeTab, mainTasks, blockedTasks, deadlineTasks, backlogTasks)}
+              tasks={getTypeTasks(typeTab, deadlineTasks, backlogTasks)}
               title={formatTaskType(typeTab)}
               todayKey={todayKey}
             />
@@ -762,7 +726,7 @@ function TodoApp({ isMobile = false }) {
                     onChange={(event) => {
                       const nextArea = event.target.value;
                       setCaptureArea(nextArea);
-                      setCaptureTaskType(getDefaultCaptureTaskType(nextArea));
+                      setCaptureTaskType(getDefaultCaptureTaskType());
                       setCaptureProjectId((current) => {
                         if (!current) {
                           return "";
@@ -775,12 +739,15 @@ function TodoApp({ isMobile = false }) {
                       });
                     }}
                   >
-                    <option value="work">Work</option>
-                    <option value="life">Life</option>
+                    {AREA_TABS.map((area) => (
+                      <option key={area.id} value={area.id}>
+                        {area.label}
+                      </option>
+                    ))}
                   </select>
 
                   <select value={captureTaskType} onChange={(event) => setCaptureTaskType(event.target.value)}>
-                    {getAvailableTaskTypes(captureArea).map((taskType) => (
+                    {getAvailableTaskTypes().map((taskType) => (
                       <option key={taskType} value={taskType}>
                         {formatTaskType(taskType)}
                       </option>
@@ -855,9 +822,9 @@ function TodoApp({ isMobile = false }) {
 
           <div className="nav-group">
             <div className="nav-section-row" aria-hidden="true">
-              <span className="nav-item__label">Areas</span>
+              <span className="nav-item__label">Owners</span>
             </div>
-            <div className="nav-subtabs" aria-label="Area views">
+            <div className="nav-subtabs" aria-label="Owner views">
               {AREA_TABS.map((subtab) => (
                 <button
                   key={subtab.id}
@@ -896,7 +863,7 @@ function TodoApp({ isMobile = false }) {
                     <span className="nav-item__label">{subtab.label}</span>
                   </span>
                   <span className="nav-item__count">
-                    {getTypeCount(subtab.id, mainTasks, blockedTasks, deadlineTasks, backlogTasks)}
+                    {getTypeCount(subtab.id, deadlineTasks, backlogTasks)}
                   </span>
                 </button>
               ))}
@@ -959,7 +926,7 @@ function TodoApp({ isMobile = false }) {
               onChange={(event) => {
                 const nextArea = event.target.value;
                 setCaptureArea(nextArea);
-                setCaptureTaskType(getDefaultCaptureTaskType(nextArea));
+                setCaptureTaskType(getDefaultCaptureTaskType());
                 setCaptureProjectId((current) => {
                   if (!current) {
                     return "";
@@ -972,12 +939,15 @@ function TodoApp({ isMobile = false }) {
                 });
               }}
             >
-              <option value="work">Work</option>
-              <option value="life">Life</option>
+              {AREA_TABS.map((area) => (
+                <option key={area.id} value={area.id}>
+                  {area.label}
+                </option>
+              ))}
             </select>
 
             <select value={captureTaskType} onChange={(event) => setCaptureTaskType(event.target.value)}>
-              {getAvailableTaskTypes(captureArea).map((taskType) => (
+              {getAvailableTaskTypes().map((taskType) => (
                 <option key={taskType} value={taskType}>
                   {formatTaskType(taskType)}
                 </option>
@@ -1002,7 +972,7 @@ function TodoApp({ isMobile = false }) {
         {primaryTab === "today" ? (
           <div className="today-stack">
             <AreaSectionPanel
-              emptyState="No work tasks need attention today."
+              emptyState={`No ${getAreaLabel("work")} tasks need attention today.`}
               onReorderSection={handleReorderTodaySection}
               onSelect={setSelectedTaskId}
               onSetStatus={handleSetTaskStatus}
@@ -1010,12 +980,12 @@ function TodoApp({ isMobile = false }) {
               projectById={projectById}
               sections={todayWorkSections}
               selectedTaskId={selectedTaskId}
-              title="Work"
+              title={getAreaLabel("work")}
               todayKey={todayKey}
             />
 
             <AreaSectionPanel
-              emptyState="No life tasks need attention today."
+              emptyState={`No ${getAreaLabel("life")} tasks need attention today.`}
               onReorderSection={handleReorderTodaySection}
               onSelect={setSelectedTaskId}
               onSetStatus={handleSetTaskStatus}
@@ -1023,7 +993,7 @@ function TodoApp({ isMobile = false }) {
               projectById={projectById}
               sections={todayLifeSections}
               selectedTaskId={selectedTaskId}
-              title="Life"
+              title={getAreaLabel("life")}
               todayKey={todayKey}
             />
             <DailyNotePanel
@@ -1054,26 +1024,26 @@ function TodoApp({ isMobile = false }) {
               showBacklog={showBacklogInAllTasks}
             />
             <AreaSectionPanel
-              emptyState="No open work tasks."
+              emptyState={`No open ${getAreaLabel("work")} tasks.`}
               onSelect={setSelectedTaskId}
               onSetStatus={handleSetTaskStatus}
               onToggleToday={handleToggleToday}
               projectById={projectById}
               sections={allWorkSections}
               selectedTaskId={selectedTaskId}
-              title="Work"
+              title={getAreaLabel("work")}
               todayKey={todayKey}
             />
 
             <AreaSectionPanel
-              emptyState="No open life tasks."
+              emptyState={`No open ${getAreaLabel("life")} tasks.`}
               onSelect={setSelectedTaskId}
               onSetStatus={handleSetTaskStatus}
               onToggleToday={handleToggleToday}
               projectById={projectById}
               sections={allLifeSections}
               selectedTaskId={selectedTaskId}
-              title="Life"
+              title={getAreaLabel("life")}
               todayKey={todayKey}
             />
           </div>
@@ -1108,7 +1078,7 @@ function TodoApp({ isMobile = false }) {
             projectById={projectById}
             selectedTaskId={selectedTaskId}
             tasks={areaTab === "work" ? workTasks : lifeTasks}
-            title={areaTab === "work" ? "Work" : "Life"}
+            title={getAreaLabel(areaTab)}
             todayKey={todayKey}
           />
         ) : (
@@ -1118,11 +1088,11 @@ function TodoApp({ isMobile = false }) {
             onSetStatus={handleSetTaskStatus}
             onToggleToday={handleToggleToday}
             projectById={projectById}
-            selectedTaskId={selectedTaskId}
-            tasks={getTypeTasks(typeTab, mainTasks, blockedTasks, deadlineTasks, backlogTasks)}
-            title={formatTaskType(typeTab)}
-            todayKey={todayKey}
-          />
+          selectedTaskId={selectedTaskId}
+          tasks={getTypeTasks(typeTab, deadlineTasks, backlogTasks)}
+          title={formatTaskType(typeTab)}
+          todayKey={todayKey}
+        />
         )}
       </main>
 
@@ -1412,7 +1382,7 @@ function TaskInspector({
     onClose?.();
   }
 
-  const availableTaskTypes = getAvailableTaskTypes(task.area);
+  const availableTaskTypes = getAvailableTaskTypes();
   const areaProjects = sortProjects(
     projects.filter(
       (project) =>
@@ -1446,16 +1416,16 @@ function TaskInspector({
 
       <div className="field-grid">
         <div className="field-group">
-          <span className="field-group__label">Area</span>
+          <span className="field-group__label">Owner</span>
           <div className="segmented-control">
-            {["work", "life"].map((area) => (
+            {AREA_TABS.map((area) => (
               <button
-                key={area}
-                className={`segmented-control__button ${task.area === area ? "segmented-control__button--active" : ""}`}
-                onClick={() => saveField("area", area)}
+                key={area.id}
+                className={`segmented-control__button ${task.area === area.id ? "segmented-control__button--active" : ""}`}
+                onClick={() => saveField("area", area.id)}
                 type="button"
               >
-                {area}
+                {area.label}
               </button>
             ))}
           </div>
@@ -1482,7 +1452,7 @@ function TaskInspector({
         <span className="field-group__label">Type</span>
         <div
           className={`segmented-control ${
-            availableTaskTypes.length === 4 ? "segmented-control--four-up" : "segmented-control--three-up"
+            availableTaskTypes.length === 2 ? "segmented-control--two-up" : "segmented-control--three-up"
           }`}
         >
           {availableTaskTypes.map((taskType) => (
@@ -1529,38 +1499,6 @@ function TaskInspector({
               value={draft.dueDate}
             />
           </label>
-        </div>
-      ) : null}
-
-      {task.taskType === "blocked" ? (
-        <div className="field-group">
-          <span className="field-group__label">Check back</span>
-          <div className="segmented-control segmented-control--five-up">
-            {CHECKBACK_OPTIONS.map((option) => (
-              <button
-                key={option.label}
-                className="segmented-control__button"
-                onClick={() => saveField("followUpAt", createFollowUpIso(option))}
-                type="button"
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          {task.followUpAt ? (
-            <p className="field-help">
-              Current check back: {formatRelativeMoment(task.followUpAt)}
-            </p>
-          ) : null}
-          {task.followUpAt ? (
-            <button
-              className="ghost-button ghost-button--inline"
-              onClick={() => saveField("followUpAt", null)}
-              type="button"
-            >
-              Clear check back
-            </button>
-          ) : null}
         </div>
       ) : null}
 
@@ -1654,8 +1592,11 @@ function ProjectsBoard({ openProjects, doneProjects, taskCountByProjectId, onCre
             value={projectTitle}
           />
           <select value={projectArea} onChange={(event) => setProjectArea(event.target.value)}>
-            <option value="work">Work</option>
-            <option value="life">Life</option>
+            {AREA_TABS.map((area) => (
+              <option key={area.id} value={area.id}>
+                {area.label}
+              </option>
+            ))}
           </select>
           <button className="primary-button" disabled={isSaving || !projectTitle.trim()} type="submit">
             Create
@@ -1707,7 +1648,7 @@ function ProjectCollection({ title, projects, emptyState, taskCountByProjectId, 
                 </div>
               </div>
               <div className="task-card__meta">
-                <span className="task-card__meta-pill">{project.area}</span>
+                <span className="task-card__meta-pill">{getAreaLabel(project.area)}</span>
                 <span className="task-card__meta-pill">
                   {taskCountByProjectId.get(project.id) ?? 0} tasks
                 </span>
@@ -1778,12 +1719,12 @@ function toApiTaskPayload(task) {
   return payload;
 }
 
-function getTypeCount(typeTab, mainTasks, blockedTasks, deadlineTasks, backlogTasks) {
+function getAreaLabel(area) {
+  return AREA_TABS.find((tab) => tab.id === area)?.label ?? area;
+}
+
+function getTypeCount(typeTab, deadlineTasks, backlogTasks) {
   switch (typeTab) {
-    case "main":
-      return mainTasks.length;
-    case "blocked":
-      return blockedTasks.length;
     case "deadline":
       return deadlineTasks.length;
     case "backlog":
@@ -1793,15 +1734,12 @@ function getTypeCount(typeTab, mainTasks, blockedTasks, deadlineTasks, backlogTa
   }
 }
 
-function getAvailableTaskTypes(area) {
-  if (area === "life") {
-    return ["blocked", "deadline", "backlog"];
-  }
-  return ["main", "blocked", "deadline", "backlog"];
+function getAvailableTaskTypes() {
+  return ["deadline", "backlog"];
 }
 
-function getDefaultCaptureTaskType(area) {
-  return area === "life" ? "backlog" : "main";
+function getDefaultCaptureTaskType() {
+  return "deadline";
 }
 
 function getPrimaryTabCount(tabId, todayCount, openCount, doneCount) {
@@ -1820,9 +1758,9 @@ function getPrimaryTabCount(tabId, todayCount, openCount, doneCount) {
 function getAreaEmptyState(areaTab) {
   switch (areaTab) {
     case "work":
-      return "No open work tasks.";
+      return `No open ${getAreaLabel("work")} tasks.`;
     case "life":
-      return "No open life tasks.";
+      return `No open ${getAreaLabel("life")} tasks.`;
     default:
       return "Nothing here.";
   }
@@ -1830,10 +1768,6 @@ function getAreaEmptyState(areaTab) {
 
 function getTypeEmptyState(typeTab) {
   switch (typeTab) {
-    case "main":
-      return "No main tasks.";
-    case "blocked":
-      return "No blocked tasks.";
     case "deadline":
       return "No deadlines on the board.";
     case "backlog":
@@ -1843,18 +1777,14 @@ function getTypeEmptyState(typeTab) {
   }
 }
 
-function getTypeTasks(typeTab, mainTasks, blockedTasks, deadlineTasks, backlogTasks) {
+function getTypeTasks(typeTab, deadlineTasks, backlogTasks) {
   switch (typeTab) {
-    case "main":
-      return mainTasks;
-    case "blocked":
-      return blockedTasks;
     case "deadline":
       return deadlineTasks;
     case "backlog":
       return backlogTasks;
     default:
-      return mainTasks;
+      return deadlineTasks;
   }
 }
 
@@ -1868,10 +1798,6 @@ function getAllTaskSections(sections, showBacklog) {
 
 function formatTaskType(taskType) {
   switch (taskType) {
-    case "main":
-      return "Main";
-    case "blocked":
-      return "Blocked";
     case "deadline":
       return "Deadline";
     case "backlog":
@@ -1908,11 +1834,6 @@ function localDateToIso(value) {
     return null;
   }
   return new Date(`${value}T00:00:00`).toISOString();
-}
-
-function createFollowUpIso(option) {
-  const totalHours = option.days ? option.days * 24 : option.hours;
-  return new Date(Date.now() + totalHours * 60 * 60 * 1000).toISOString();
 }
 
 function getEndOfLocalDay(date) {

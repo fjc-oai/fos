@@ -50,7 +50,8 @@ else:
     )
 
 VALID_STATUSES = {"open", "done"}
-VALID_TYPES = {"main", "backlog", "blocked", "deadline"}
+VALID_TYPES = {"backlog", "deadline"}
+OWNER_TYPE_MIGRATION_KEY = "owner_type_simplification_20260427"
 
 metadata = sa.MetaData()
 projects = sa.Table(
@@ -68,6 +69,13 @@ daily_notes = sa.Table(
     metadata,
     sa.Column("note_date", sa.Date, primary_key=True),
     sa.Column("content", sa.Text, nullable=False, server_default=""),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+)
+app_meta = sa.Table(
+    "app_meta",
+    metadata,
+    sa.Column("key", sa.String(100), primary_key=True),
+    sa.Column("value", sa.String(255), nullable=False),
     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
 )
 tasks = sa.Table(
@@ -123,7 +131,7 @@ class TaskCreate(BaseModel):
     details: str = ""
     area: Literal["work", "life"]
     status: Literal["open", "done"] = "open"
-    task_type: Literal["main", "backlog", "blocked", "deadline"] = "backlog"
+    task_type: Literal["backlog", "deadline"] = "deadline"
     due_at: Optional[datetime] = None
     follow_up_at: Optional[datetime] = None
     planned_for: Optional[date] = None
@@ -137,7 +145,7 @@ class TaskUpdate(BaseModel):
     details: Optional[str] = None
     area: Optional[Literal["work", "life"]] = None
     status: Optional[Literal["open", "done"]] = None
-    task_type: Optional[Literal["main", "backlog", "blocked", "deadline"]] = None
+    task_type: Optional[Literal["backlog", "deadline"]] = None
     due_at: Optional[datetime] = None
     follow_up_at: Optional[datetime] = None
     planned_for: Optional[date] = None
@@ -152,7 +160,7 @@ class TaskOut(BaseModel):
     details: str
     area: Literal["work", "life"]
     status: Literal["open", "done"]
-    task_type: Literal["main", "backlog", "blocked", "deadline"]
+    task_type: Literal["backlog", "deadline"]
     due_at: Optional[datetime] = None
     follow_up_at: Optional[datetime] = None
     planned_for: Optional[date] = None
@@ -183,23 +191,32 @@ def map_old_status(value: Optional[str]) -> str:
     return "open"
 
 
+def get_row_value(row, key: str, default=None):
+    if hasattr(row, "get"):
+        return row.get(key, default)
+    mapping = getattr(row, "_mapping", None)
+    if mapping is not None:
+        return mapping.get(key, default)
+    return getattr(row, key, default)
+
+
 def map_old_type(row) -> str:
-    current = row.get("task_type")
+    current = get_row_value(row, "task_type")
     if current in VALID_TYPES:
         return current
-    if current == "focus":
-        return "main"
+    if current in {"blocked", "main", "focus"}:
+        return "backlog"
 
-    old_engagement = row.get("engagement")
+    old_engagement = get_row_value(row, "engagement")
     if old_engagement == "waiting":
-        return "blocked"
+        return "backlog"
     if old_engagement == "parked":
         return "backlog"
-    if row.get("due_at") is not None:
+    if get_row_value(row, "due_at") is not None:
         return "deadline"
-    if row.get("status") == "inbox":
+    if get_row_value(row, "status") == "inbox":
         return "backlog"
-    return "main"
+    return "backlog"
 
 
 def row_to_project(row) -> dict:
@@ -220,7 +237,7 @@ def row_to_task(row) -> dict:
         "details": row.details or "",
         "area": row.area,
         "status": row.status,
-        "task_type": "main" if row.task_type == "focus" else row.task_type,
+        "task_type": normalize_area_task_type(row.area, row.task_type),
         "due_at": row.due_at,
         "follow_up_at": row.follow_up_at,
         "planned_for": row.planned_for,
@@ -241,9 +258,46 @@ def row_to_daily_note(row) -> dict:
 
 
 def normalize_area_task_type(area: str, task_type: str) -> str:
-    if area == "life" and task_type == "main":
+    if task_type in {"blocked", "main", "focus"}:
         return "backlog"
-    return task_type
+    if task_type == "deadline":
+        return "deadline"
+    return "backlog"
+
+
+def has_app_meta(conn, key: str) -> bool:
+    row = conn.execute(sa.select(app_meta.c.key).where(app_meta.c.key == key)).first()
+    return row is not None
+
+
+def record_app_meta(conn, key: str, value: str = "done"):
+    now = utcnow()
+    insert_stmt = sa.insert(app_meta).values(key=key, value=value, updated_at=now)
+    update_columns = {"value": value, "updated_at": now}
+
+    existing = conn.execute(sa.select(app_meta.c.key).where(app_meta.c.key == key)).first()
+    if existing is None:
+        conn.execute(insert_stmt)
+    else:
+        conn.execute(sa.update(app_meta).where(app_meta.c.key == key).values(**update_columns))
+
+
+def apply_owner_type_migration(conn):
+    if has_app_meta(conn, OWNER_TYPE_MIGRATION_KEY):
+        return
+
+    conn.execute(sa.update(projects).values(area="work"))
+    conn.execute(
+        sa.update(tasks)
+        .where(tasks.c.task_type == "deadline")
+        .values(area="work", follow_up_at=None)
+    )
+    conn.execute(
+        sa.update(tasks)
+        .where(tasks.c.task_type != "deadline")
+        .values(area="work", task_type="backlog", due_at=None, follow_up_at=None)
+    )
+    record_app_meta(conn, OWNER_TYPE_MIGRATION_KEY)
 
 
 def get_next_today_position(conn, area: str, task_type: str, exclude_task_id: Optional[int] = None) -> int:
@@ -393,7 +447,7 @@ def ensure_schema():
             mapped = {
                 "id": row["id"],
                 "title": row["title"],
-                "area": row.get("area") or "work",
+                "area": "work",
                 "status": row.get("status") if row.get("status") in VALID_STATUSES else "open",
                 "created_at": row.get("created_at") or utcnow(),
                 "updated_at": row.get("updated_at") or row.get("created_at") or utcnow(),
@@ -423,7 +477,7 @@ def ensure_schema():
                         {
                             "id": max_project_id,
                             "title": (parent_row or {}).get("title") or f"Imported project {parent_id}",
-                            "area": (parent_row or {}).get("area") or row.get("area") or "work",
+                            "area": "work",
                             "status": "open",
                             "created_at": created_at,
                             "updated_at": updated_at,
@@ -433,7 +487,7 @@ def ensure_schema():
 
                 project_id = parent_project_map[parent_id]
 
-            area = row.get("area") or "work"
+            area = "work"
             status = row["status"] if row.get("status") in VALID_STATUSES else map_old_status(row.get("status"))
             task_type = normalize_area_task_type(area, map_old_type(row))
             mapped_task = {
@@ -444,7 +498,7 @@ def ensure_schema():
                 "status": status,
                 "task_type": task_type,
                 "due_at": row.get("due_at") if task_type == "deadline" else None,
-                "follow_up_at": row.get("follow_up_at") if task_type == "blocked" else None,
+                "follow_up_at": None,
                 "planned_for": row.get("planned_for"),
                 "today_position": row.get("today_position"),
                 "project_id": project_id,
@@ -465,6 +519,8 @@ def ensure_schema():
 
 def normalize_rows():
     with engine.begin() as conn:
+        apply_owner_type_migration(conn)
+
         project_rows = conn.execute(sa.select(projects)).all()
         for row in project_rows:
             title = row.title.strip()
@@ -490,7 +546,7 @@ def normalize_rows():
                 updates["task_type"] = normalized_type
             if normalized_type != "deadline" and row.due_at is not None:
                 updates["due_at"] = None
-            if normalized_type != "blocked" and row.follow_up_at is not None:
+            if row.follow_up_at is not None:
                 updates["follow_up_at"] = None
             if row.status == "done" and row.today_position is not None:
                 updates["today_position"] = None
@@ -536,7 +592,7 @@ def seed_initial_data():
                 "details": "Turn a loose set of work ideas into a one-page roadmap before the team sync tomorrow.",
                 "area": "work",
                 "status": "open",
-                "task_type": "main",
+                "task_type": "backlog",
                 "planned_for": today,
                 "today_position": 1,
                 "project_id": roadmap_project_id,
@@ -546,7 +602,7 @@ def seed_initial_data():
                 "details": "Pull the recurring asks from the past two weeks of notes.",
                 "area": "work",
                 "status": "open",
-                "task_type": "main",
+                "task_type": "backlog",
                 "project_id": roadmap_project_id,
             },
             {
@@ -554,7 +610,7 @@ def seed_initial_data():
                 "details": "Limit it to goals, bets, and risks.",
                 "area": "work",
                 "status": "open",
-                "task_type": "main",
+                "task_type": "backlog",
                 "project_id": roadmap_project_id,
             },
             {
@@ -562,22 +618,21 @@ def seed_initial_data():
                 "details": "Start with wakeup and run-queue selection. Keep this in Today until the shape is clear.",
                 "area": "work",
                 "status": "open",
-                "task_type": "main",
+                "task_type": "backlog",
                 "planned_for": today,
                 "today_position": 2,
             },
             {
-                "title": "Check CI on PR #184",
-                "details": "The patch is done, but CI is red. Re-check after infra stabilizes before pushing another guess.",
+                "title": "Review CI on PR #184",
+                "details": "The patch is done, but CI is red. Keep the context nearby before pushing another guess.",
                 "area": "work",
                 "status": "open",
-                "task_type": "blocked",
-                "follow_up_at": now + timedelta(hours=2),
+                "task_type": "backlog",
             },
             {
                 "title": "File tax extension",
                 "details": "Collect last year documents first, then submit before the deadline turns into a problem.",
-                "area": "life",
+                "area": "work",
                 "status": "open",
                 "task_type": "deadline",
                 "due_at": now + timedelta(days=4),
@@ -592,7 +647,7 @@ def seed_initial_data():
             {
                 "title": "Book dentist appointment",
                 "details": "Captured quickly so it does not disappear. Classify it later if needed.",
-                "area": "life",
+                "area": "work",
                 "status": "open",
                 "task_type": "backlog",
             },
@@ -694,8 +749,7 @@ def update_project(project_id: int, update: ProjectUpdate):
                 }
                 if normalized_task_type != "deadline":
                     task_updates["due_at"] = None
-                if normalized_task_type != "blocked":
-                    task_updates["follow_up_at"] = None
+                task_updates["follow_up_at"] = None
 
                 conn.execute(
                     sa.update(tasks).where(tasks.c.id == project_task.id).values(**task_updates)
@@ -776,8 +830,7 @@ def create_task(task: TaskCreate):
 
     if values["task_type"] != "deadline":
         values["due_at"] = None
-    if values["task_type"] != "blocked":
-        values["follow_up_at"] = None
+    values["follow_up_at"] = None
 
     with engine.begin() as conn:
         if values["project_id"] is not None:
@@ -831,7 +884,7 @@ def update_task(task_id: int, update: TaskUpdate):
 
         if "task_type" in values and values["task_type"] != "deadline":
             values.setdefault("due_at", None)
-        if "task_type" in values and values["task_type"] != "blocked":
+        if "task_type" in values:
             values.setdefault("follow_up_at", None)
         if values.get("planned_for", current.planned_for) is None:
             values.setdefault("today_position", None)
